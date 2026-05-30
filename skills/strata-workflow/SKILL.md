@@ -1,7 +1,7 @@
 ---
 name: strata-workflow
-description: Strata — a model-tiered, budget-bounded, multi-mode agent-orchestration framework. Right-sizes every agent (cheap bulk on haiku/sonnet; a thin opus layer for plan/advise/judge/audit) and caps agent count so the session never exhausts. Modes — focus (gated restraint), panel (design tournament: N approaches → judge → synthesize a winner), scale (mass fan-out), grow (self-improving progressive loop). Use for cost-aware reviews/research/migrations, design decisions, or large generation runs that need quality without burning the budget. e.g. "/strata-workflow 300k <task>".
-argument-hint: "[<cap e.g. 200k>] [focus|panel|scale|grow] <task>"
+description: Strata — a model-tiered, budget-bounded, multi-mode agent-orchestration framework. Right-sizes every agent (cheap bulk on haiku/sonnet; a thin opus layer for plan/advise/judge/audit) and caps agent count so the session never exhausts. Modes — focus (gated restraint), panel (design tournament: N approaches → judge → synthesize a winner), scale (mass fan-out), grow (self-improving progressive loop), ultra (ultracode's full task arc on a leash). Use for cost-aware reviews/research/migrations, design decisions, end-to-end task completion, or large generation runs that need quality without burning the budget. e.g. "/strata-workflow 300k <task>".
+argument-hint: "[<cap e.g. 200k>] [focus|panel|scale|grow|ultra] <task>"
 ---
 
 # Strata Workflow
@@ -12,14 +12,15 @@ The binding guarantees live in **code** (the bundled workflows), not prose — b
 
 > **Decide the goal first; then Strata starts.** For a substantial generation/grow task, agree a **Goal Contract** with the human (objective, done-criteria, scope, budget, autonomy) before launching any workflow — Strata spawns zero agents until it's confirmed. See "Step 0 — Goal alignment".
 
-## Four modes (+ an auditor)
+## Five modes (+ an auditor)
 - **focus — `strata-focus`** (restraint, default): when the search surface is unknown and cross-source synthesis is needed, run a small find → verify → synthesize. Opus only for the synthesis. → see "FULL TEMPLATE".
 - **panel — `strata-panel`** (decide): for ONE problem with many valid approaches, generate N independent designs from DISTINCT lenses, have an opus panel judge them on caller-supplied axes, then synthesize a winner that grafts the best runner-up ideas. Opus = advise + judge + synth; the diverge bulk is sonnet. → see "PANEL mode".
 - **scale — `strata-scale`** (throughput): when the work-list is already known, fan out N independent units deliberately, but on a right-sized model (sonnet default; opus never per-unit) with schema-bounded output. An optional opus **advise** pre-pass lifts every cheap worker. → see "SCALE mode".
 - **grow — `strata-grow`** (self-improving loop): auto-generate rounds (= phases) — Plan → Build → Audit → Repair — and grow toward the agent cap, ultracode-style loop-until-cap/dry, with **/advice self-escalation** inside Build. → see "PROGRESSIVE mode".
+- **ultra — `strata-ultra`** (the full arc, "do the most"): ultracode's end-to-end task arc — understand → design → build → review (loop-until-dry) → synthesize — for taking ONE substantial task to completion, exhaustively but on Strata's leash (hard agent-count cap; opus kept to a thin judge + synth layer). The deliberate opposite of `focus`. → see "ULTRA mode".
 - **`strata-audit`** — a thin opus oversight layer that grades a large generated batch and returns systemic issues + a regenerate list.
 
-Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; **panel = many proposed, one chosen**; scale = many done cheaply; grow = many grown cheaply while self-improving. **panel decides; scale/grow build** — so panel composes as a front stage (panel picks the design → grow/scale builds it).
+Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; **panel = many proposed, one chosen**; scale = many done cheaply; grow = many grown cheaply while self-improving; **ultra = one task done exhaustively, capped**. **panel decides; scale/grow build; ultra does the whole arc** — panel composes as a front stage (panel picks the design → grow/scale builds it), while ultra is the all-in-one when you want focus's rigor scaled up to a full task.
 
 ## TL;DR — three rules (highest priority)
 1. **Solo by default.** Only fan out when the GATE below passes.
@@ -147,6 +148,24 @@ Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-grow.js", args: {
 - **Autonomous mode:** one call with a large `maxRounds`; it runs until the result has `done:true` or the cap; report at the end.
 - **Checkpoint mode:** set `maxRounds = checkpointEvery`; when it returns, report `total / auditAvg / goalResidual / done` to the human, ask continue/adjust/stop, then **re-invoke** with `coveredSeed` + `priorTotal` from the returned result (plus any goal tweaks) to continue. Repeat until `done:true` or the human stops.
 - The return carries `done`, `goalResidual`, `auditAvg`, `covered`, `total` — everything needed to report progress and resume.
+
+## ULTRA mode (strata-ultra) — how to call
+For taking ONE substantial task end-to-end with maximum rigor. Runs ultracode's full arc — **understand → design → build → review (loop-until-dry) → synthesize** — but bounded: a hard agent-count cap, and opus kept to a thin **judge + synth** layer (everything else is haiku/sonnet). This is the deliberate opposite of `focus`: where focus does the least, ultra does the most the cap allows.
+```js
+Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-ultra.js", args: {
+  task: "<the one substantial task>",
+  taskClass: "review|research|implement|migrate",   // tunes scout angles & review dimensions
+  cap: 300000,                                       // derives MAX_AGENTS (ultra roof is higher: ≤120)
+  maxAgents: 0,                                       // optional explicit override (else cap-derived)
+  designLenses: [ /* distinct approach angles; omit for defaults */ ],
+  reviewDimensions: [ "correctness", "security", "edge cases" ],
+  dryStreakLimit: 2,                                 // review loops until this many empty rounds
+  maxReviewRounds: 4
+} })
+```
+- **Per-phase ceilings** keep one phase from starving the rest (Understand ~18% / Design ~15% / Build ~27% / Review = the rest; synth reserved). The review loop self-terminates on `dryStreakLimit` empty rounds, `maxReviewRounds`, or the cap.
+- Returns `{ winnerLens, unitCount, reviewRounds, reviewLog, artifacts (unitId→output), synthesis (deliverable + completeness + residualRisks) }`.
+- **ultra runs hot** — it re-passes the full artifact set to every review/verify/repair agent, so token spend per agent is higher than other modes (its `TOKENS_PER_AGENT` estimate is set higher to compensate). The agent-count cap is still the hard guarantee; the token cap is approximate and ultra will overshoot it more than focus/scale. Budget accordingly (300k+ is a sensible floor for a real task).
 
 ## What the code guarantees (the binding lives here, not in prose)
 - **Primary guard = a literal agent counter** (needs no API, cannot fail): `MAX_AGENTS = clamp(floor(0.8*cap / 12k), 4, 40)` for focus/scale; an explicit `maxAgents` (≤950) for grow. Checked before every `agent()`.
