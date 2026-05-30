@@ -2,6 +2,8 @@
 
 A **model-tiered, budget-bounded, multi-mode agent-orchestration skill** for [Claude Code](https://claude.com/claude-code).
 
+> **Built on Claude Code's dynamic Workflows + ultracode** — the structured multi-agent fan-out you already know, re-engineered so it won't blow your token budget or run everything on the biggest model.
+
 Strata keeps the value of structured multi-agent fan-out while fixing the two ways an unbounded "spawn agents for everything" approach goes wrong:
 
 1. **Over-spawning that exhausts the session budget early.** Strata bounds spend by a literal **agent-count cap** derived from a token budget you choose at invocation.
@@ -105,6 +107,13 @@ strata-workflow/                    # repo root — also its own plugin + market
 ```
 
 The workflow scripts are plain JavaScript executed by Claude Code's Workflow runtime (no Node.js APIs; top-level `await`/`return` allowed). Each is self-contained and can be invoked directly via `Workflow({ scriptPath, args })`; SKILL.md references them via `${CLAUDE_SKILL_DIR}/workflows/<name>.js` so the path resolves in both plugin and standalone installs.
+
+## Built on dynamic Workflows + ultracode
+
+Strata stands on the best of Claude Code's orchestration stack and sharpens it:
+
+- **Claude Code's dynamic Workflows** — every Strata mode is a dynamic workflow script on the `Workflow` runtime (`agent()`, `pipeline()`, `parallel()`, `phase()`, `budget`). You get deterministic fan-out, streaming progress, and structured outputs out of the box.
+- **ultracode** — Strata takes ultracode's structured fan-out (decompose → fan out → adversarially verify → synthesize) and makes it *affordable*: where ultracode treats token cost as no constraint and leans on the biggest model, Strata bounds spend by a hard agent-count cap and right-sizes every agent's model. Same orchestration power, a fraction of the burn.
 
 ## License
 
