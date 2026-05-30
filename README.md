@@ -37,17 +37,31 @@ A bigger token budget buys *more agents*, never a bigger per-agent model.
 
 ## Install
 
-Strata is a Claude Code skill. Install it where Claude Code looks for skills:
+Strata ships as a **Claude Code plugin** (this repo is also its own marketplace), and the same skill works **standalone** if you prefer. Pick one.
+
+### As a plugin (recommended)
+
+```
+/plugin marketplace add ymadd/strata-workflow
+/plugin install strata-workflow@strata-workflow
+```
+
+The first command registers this repo as a marketplace; the second installs the plugin (`<plugin>@<marketplace>`). Claude Code auto-discovers the bundled skill.
+
+### As a standalone skill
+
+Clone the skill directory straight into where Claude Code looks for skills:
 
 ```bash
 # user-level (available in every project)
-git clone https://github.com/<you>/strata-workflow ~/.claude/skills/strata-workflow
+git clone https://github.com/ymadd/strata-workflow /tmp/strata && \
+  cp -R /tmp/strata/skills/strata-workflow ~/.claude/skills/strata-workflow
 
 # OR project-level (available in one repo)
-git clone https://github.com/<you>/strata-workflow <your-repo>/.claude/skills/strata-workflow
+cp -R /tmp/strata/skills/strata-workflow <your-repo>/.claude/skills/strata-workflow
 ```
 
-Requires Claude Code with the **Workflow** tool available. No external dependencies, no build step — the skill is self-contained (the workflow scripts carry their own guards; nothing is stored outside the repo).
+Requires Claude Code with the **Workflow** tool available. No external dependencies, no build step — the skill is self-contained: the workflow scripts carry their own guards, and SKILL.md references them via `${CLAUDE_SKILL_DIR}`, so the same files work in either install mode.
 
 ## Usage
 
@@ -61,7 +75,7 @@ Invoke the skill and, optionally, lead with a token budget that derives all the 
 - From it Strata derives `MAX_AGENTS = clamp(floor(0.8 * cap / 12k), 4, 40)` for focus/scale/panel (grow takes an explicit `maxAgents`).
 - The token cap is *approximate*; the **agent-count counter is the hard guarantee**.
 
-The skill picks a mode via a deliberate gate (default: do the least — solo, or a small fan-out only when breadth-of-evidence justifies it), then calls the matching workflow. See [`SKILL.md`](./SKILL.md) for the full model-facing specification, the gate, the per-mode call signatures, and the Goal-alignment flow used by `grow`.
+The skill picks a mode via a deliberate gate (default: do the least — solo, or a small fan-out only when breadth-of-evidence justifies it), then calls the matching workflow. See [`SKILL.md`](./skills/strata-workflow/SKILL.md) for the full model-facing specification, the gate, the per-mode call signatures, and the Goal-alignment flow used by `grow`.
 
 ## How it works
 
@@ -73,19 +87,24 @@ The skill picks a mode via a deliberate gate (default: do the least — solo, or
 ## Repository layout
 
 ```
-strata-workflow/
-├── SKILL.md              # the model-facing skill spec (modes, gate, call signatures)
-├── README.md             # this file
-├── LICENSE
-└── workflows/
-    ├── strata-focus.js   # find → verify → synthesize
-    ├── strata-panel.js   # design tournament: diverge → judge → synthesize
-    ├── strata-scale.js   # advise → build (×N) → audit → repair
-    ├── strata-grow.js    # self-improving / goal-driven progressive loop
-    └── strata-audit.js   # opus oversight: grade a batch, return systemic issues
+strata-workflow/                    # repo root — also its own plugin + marketplace
+├── .claude-plugin/
+│   ├── plugin.json                 # plugin manifest
+│   └── marketplace.json            # marketplace listing (single-plugin)
+├── skills/
+│   └── strata-workflow/
+│       ├── SKILL.md                # the model-facing skill spec (modes, gate, call signatures)
+│       └── workflows/
+│           ├── strata-focus.js     # find → verify → synthesize
+│           ├── strata-panel.js     # design tournament: diverge → judge → synthesize
+│           ├── strata-scale.js     # advise → build (×N) → audit → repair
+│           ├── strata-grow.js      # self-improving / goal-driven progressive loop
+│           └── strata-audit.js     # opus oversight: grade a batch, return systemic issues
+├── README.md                       # this file
+└── LICENSE
 ```
 
-The workflow scripts are plain JavaScript executed by Claude Code's Workflow runtime (no Node.js APIs; top-level `await`/`return` allowed). Each is self-contained and can be invoked directly via `Workflow({ scriptPath, args })`.
+The workflow scripts are plain JavaScript executed by Claude Code's Workflow runtime (no Node.js APIs; top-level `await`/`return` allowed). Each is self-contained and can be invoked directly via `Workflow({ scriptPath, args })`; SKILL.md references them via `${CLAUDE_SKILL_DIR}/workflows/<name>.js` so the path resolves in both plugin and standalone installs.
 
 ## License
 

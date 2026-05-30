@@ -1,0 +1,15 @@
+{
+  "name": "strata-workflow",
+  "owner": {
+    "name": "yamato kobayashi",
+    "url": "https://github.com/ymadd"
+  },
+  "description": "Strata — model-tiered, budget-bounded, multi-mode agent orchestration for Claude Code.",
+  "plugins": [
+    {
+      "name": "strata-workflow",
+      "source": "./",
+      "description": "Model-tiered, budget-bounded, multi-mode agent-orchestration skill (focus / panel / scale / grow + audit). Keeps structured fan-out value while capping agent count and reserving opus for a thin plan/advise/judge/audit layer."
+    }
+  ]
+}

@@ -33,7 +33,7 @@ Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; *
 2. Read the **taskClass** (`review` / `research` / `implement` / `migrate`) or infer it from the task.
 3. Print one line before starting (makes the tiering visible):
    `Strata active: cap=<CEIL> (<set|default>), MAX agents≈<N>, tiers find=haiku verify=sonnet synth=opus`
-4. **Resolve the workflow path.** The scripts live in this skill's own `workflows/` directory. The `scriptPath` in the examples below uses `~/.claude/skills/strata-workflow/workflows/<name>.js` — the standard **user-level** install. Expand `~` to an absolute path when invoking (the Workflow tool needs an absolute path). If the skill is installed **project-level**, use `<repo>/.claude/skills/strata-workflow/workflows/<name>.js` instead. Nothing here is machine-specific — Strata is self-contained: the workflow JS carries its own guards and the runtime notes live in code comments, so no external memory or config is required.
+4. **Resolve the workflow path.** The scripts live in this skill's own `workflows/` directory. The `scriptPath` in the examples below uses **`${CLAUDE_SKILL_DIR}/workflows/<name>.js`** — the portable reference to this skill's install directory, which resolves correctly whether Strata is installed as a **standalone skill** (`~/.claude/skills/strata-workflow/` or a project's `.claude/skills/`) or **bundled in a plugin** (the plugin cache). The Workflow tool needs an **absolute** path: if `${CLAUDE_SKILL_DIR}` is already expanded in your context, use it as-is; otherwise resolve it to the absolute directory this SKILL.md was loaded from before invoking. Nothing here is machine-specific — Strata is self-contained: the workflow JS carries its own guards and the runtime notes live in code comments, so no external memory or config is required.
 
 ## The 3-way GATE (the one thing prose owns)
 Pick exactly one. **Default is SOLO.**
@@ -46,7 +46,7 @@ Pick exactly one. **Default is SOLO.**
 ## FULL TEMPLATE (focus) — how to call
 ```js
 Workflow({
-  scriptPath: "~/.claude/skills/strata-workflow/workflows/strata-focus.js",
+  scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-focus.js",
   args: { task: "<full task>", taskClass: "review|research|implement|migrate", cap: <number or omit>, tierHint: "cheap|normal|hard" }
 })
 ```
@@ -56,7 +56,7 @@ Omit `cap` and the script uses 150k.
 For ONE problem with many valid approaches, where the value is **choosing the right design**, not producing volume. N contenders each design from a DISTINCT lens → an opus panel scores them on **caller-supplied axes** → an opus synthesis picks the winner and grafts the best runner-up ideas into a final, build-ready blueprint. Domain-agnostic: feature architecture, API design, library/skeleton selection, art direction.
 ```js
 Workflow({
-  scriptPath: "~/.claude/skills/strata-workflow/workflows/strata-panel.js",
+  scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-panel.js",
   args: {
     problem: "<the ONE problem to solve>",
     contenders: 4,                              // N designs (clamped to fit the cap; default 4)
@@ -78,7 +78,7 @@ Workflow({
 For a known work-list of N independent units (e.g. 500 components, N file transforms, N data records). The **count is the deliberate knob**, but the model stays right-sized (sonnet default; opus never per-unit) and schema keeps each unit light.
 ```js
 Workflow({
-  scriptPath: "~/.claude/skills/strata-workflow/workflows/strata-scale.js",
+  scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-scale.js",
   args: {
     task: "<overall instruction>",
     units: [ /* explicit unit specs */ ],   // OR gridA:[...]+gridB:[...] (cross-product), OR count:500
@@ -100,7 +100,7 @@ A **thin opus layer** wraps the cheap bulk (opus stays a few % of total).
 - **BUILD (sonnet × N):** schema-bounded right-sized fan-out.
 - **AUDIT (opus):** call `strata-audit.js`. Each auditor reads ONE pre-split batch file (cheap input), grades each unit, flags broken/dup/off-spec; an opus meta-critic returns systemic issues + `regenerateIds`.
   ```js
-  Workflow({ scriptPath: "~/.claude/skills/strata-workflow/workflows/strata-audit.js",
+  Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-audit.js",
     args: { batchDir: "<outDir>/audit-batches", count: <N>, batchSize: 20, model: "opus", task: "<context>" } })
   ```
 - **REPAIR (sonnet, failures only):** re-run `strata-scale` on just the `regenerateIds` with hardened instructions. Fix the worst, not the whole — minimal cost.
@@ -110,7 +110,7 @@ Structural checks (empty / unscoped / dup / JS syntax) are done **for free in co
 ### PROGRESSIVE mode (strata-grow) — self-improving growth
 Where `strata-scale` is "fixed N at once," `strata-grow` **auto-generates rounds (= phases) and grows to the agent-count cap (≤950)**, ultracode-style. One round = **Plan → Build → Audit → Repair**.
 ```js
-Workflow({ scriptPath: "~/.claude/skills/strata-workflow/workflows/strata-grow.js",
+Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-grow.js",
   args: { task, domain, gridA:[...], gridB:[...], maxAgents: 150, batchSize: 40, qualityFloor: 60, model: "sonnet", planModel: "opus", adviceThreshold: 78 } })
 ```
 - **Plan (auto-phase generation, opus default):** the planner proposes uncovered cells, then invents NEW types/styles to expand the domain once the seed grid is exhausted. Stops on `domainExhausted` or `dryStreak>=2`.
@@ -136,7 +136,7 @@ For a substantial generation/grow task, first agree a **Goal Contract** with the
 ## Goal-driven grow — how to run
 Pass the contract to `strata-grow` as `goal`. It stops the moment the goal is MET — the programmatic criteria AND an opus goal-critic both pass — or the agent cap is hit.
 ```js
-Workflow({ scriptPath: "~/.claude/skills/strata-workflow/workflows/strata-grow.js", args: {
+Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-grow.js", args: {
   task, domain, gridA, gridB, qualityFloor, model: "sonnet", planModel: "opus",
   maxAgents: <budget>,
   maxRounds: <checkpointEvery, or a large number for autonomous>,
