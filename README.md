@@ -23,7 +23,7 @@ Fan-out is powerful but easy to overdo: a panel of opus agents on every task bur
 | **panel** | `strata-panel.js` | ONE problem with many valid approaches — you want to *choose* the best design (architecture, API design, library selection, art direction). | advise + judge + synthesize |
 | **scale** | `strata-scale.js` | A known work-list of N independent units (e.g. generate 500 components, transform N files). | advise pre-pass + audit |
 | **grow** | `strata-grow.js` | A self-improving generation loop that grows toward a cap or a goal, auto-generating rounds (Plan → Build → Audit → Repair). | plan + advise + audit |
-| **ultra** | `strata-ultra.js` | ONE substantial task taken end-to-end: understand → design → build → review (loop-until-dry) → synthesize. ultracode's full arc, capped. | judge + synthesize |
+| **ultra** | `strata-ultra.js` | ONE substantial task taken end-to-end: understand → design → build → review → synthesize. ultracode's full arc that *dynamically* spawns agents where needed (opus advice / tie-breaks / completeness-grown units). Capped, or `unleashed`. | judge + advice + tie-break + critic + synthesize |
 | _audit_ | `strata-audit.js` | A thin opus oversight layer that grades a large generated batch and returns systemic issues + a regenerate list. | grading + meta-critique |
 
 **Shared DNA:** focus = few done smartly · panel = many proposed, one chosen · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped. `panel` *decides*; `scale`/`grow` *build*; `ultra` *does the whole arc*. `focus` does the least, `ultra` does the most the cap allows.

@@ -1,17 +1,17 @@
 export const meta = {
   name: 'strata-ultra',
   description:
-    "ultracode's full task arc — understand -> design -> build -> review (loop-until-dry) -> synthesize — but on Strata's leash: a hard agent-count cap plus model tiering keep opus to a thin judge+synth layer and stop the session from exhausting. Use to take ONE substantial task end-to-end, exhaustively but within a budget. The opposite of `focus` (do the least): this does the most the cap allows.",
+    "ultracode's full task arc — understand -> design -> build -> review -> synthesize — that DYNAMICALLY spawns more agents where the work needs them: opus advice for low-confidence builds, an opus tie-breaker when verifiers split, and an opus completeness critic that grows new work units until the deliverable is actually done. Still on Strata's leash by default (a hard agent-count cap; opus kept thin), or fully `unleashed`. The deliberate opposite of `focus`: this does the most the budget allows.",
   phases: [
     { title: 'Understand', detail: 'cheap haiku scouts map the task from several angles in parallel' },
     { title: 'Design', detail: 'sonnet proposes approaches from distinct lenses; one opus judge picks a winner' },
-    { title: 'Build', detail: 'sonnet fans out the winning design into work units' },
-    { title: 'Review', detail: 'dimension finders + severity-gated adversarial verify + repair, looped until dry' },
+    { title: 'Build', detail: 'sonnet fans out work units; low-confidence units get an opus advice + revise pass' },
+    { title: 'Review', detail: 'dimension finders + adversarial verify (opus tie-breaks splits) + repair, looped until dry; an opus completeness critic then grows gap units until done' },
     { title: 'Synthesize', detail: 'one opus agent assembles the final deliverable and flags what is missing' },
   ],
 }
 
-// ---- args: { task, taskClass?, cap?, maxAgents?, designLenses?, reviewDimensions?, dryStreakLimit?, maxReviewRounds?, tierHint? } ----
+// ---- args: { task, taskClass?, cap?, maxAgents?, unleashed?, designLenses?, reviewDimensions?, adviceThreshold?, dryStreakLimit?, maxReviewRounds?, maxImprovementRounds?, tierHint? } ----
 // The workflow runtime threads `args` to the script as a JSON STRING, so normalize it here.
 const A = (() => {
   if (typeof args === 'string') {
@@ -24,25 +24,23 @@ const A = (() => {
   return args && typeof args === 'object' ? args : {}
 })()
 if (!A.task) {
-  return {
-    error: "No task provided. Invoke as Workflow({ scriptPath: '.../strata-ultra.js', args: { task, taskClass, cap } }).",
-  }
+  return { error: "No task provided. Invoke as Workflow({ scriptPath: '.../strata-ultra.js', args: { task, taskClass, cap } })." }
 }
 
 // ---- tunable constants ----
 const DEFAULT_CAP = 150_000
-// ultra is the most token-heavy mode: it re-passes the full artifact set to every review/verify/repair
-// agent, so per-agent spend runs well above the other modes. A higher estimate keeps MAX_AGENTS (and thus
-// the token overshoot) conservative. The agent-count counter is still the hard guarantee; tokens are approximate.
+// ultra is the most token-heavy mode: it re-passes the full artifact set to many agents and spawns
+// escalation agents dynamically, so per-agent spend runs above the other modes. A higher estimate keeps
+// MAX_AGENTS conservative. The agent-count counter is the hard guarantee; tokens are approximate.
 const TOKENS_PER_AGENT = 16_000
-const AGENT_FLOOR = 8 // ultra is multi-phase; it needs more headroom than focus's floor of 4
-const AGENT_ROOF = 120 // hard backstop unless an explicit maxAgents is given
-const HARD_LIMIT = 950 // lifetime-agent guard
+const AGENT_FLOOR = 8
+const AGENT_ROOF = 120
+const HARD_LIMIT = 950 // runtime lifetime-agent backstop
+const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' ? A.adviceThreshold : 78
 
-// ---- model tiers: opus stays a THIN layer (judge + synth only); everything else is haiku/sonnet ----
-const TIER = { scout: 'haiku', design: 'sonnet', judge: 'opus', build: 'sonnet', review: 'sonnet', verify: 'sonnet', repair: 'sonnet', synth: 'opus' }
+// ---- model tiers: opus is spawned ONLY where judgment is needed (judge, advice, tie-break, critic, synth) ----
+const TIER = { scout: 'haiku', design: 'sonnet', judge: 'opus', build: 'sonnet', advise: 'opus', review: 'sonnet', verify: 'sonnet', tiebreak: 'opus', repair: 'sonnet', critic: 'opus', synth: 'opus' }
 if (A.tierHint === 'cheap') TIER.design = 'sonnet'
-if (A.tierHint === 'hard') TIER.verify = 'sonnet' // keep verify on sonnet even when hard; opus is reserved
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {
@@ -67,36 +65,51 @@ const hardTotal = () => {
   }
 }
 
+// ---- UNLEASHED: deliberately drop Strata's leash (true ultracode — "token cost is no constraint").
+// Ignores the cap-derived agent ceiling AND the soft token budget. The ONLY remaining guards are the
+// runtime's hard 950-agent lifetime backstop and any `+Ntokens` hard budget.total (agent() throws there).
+// Off by default. Pass an explicit `maxAgents` to bound it safely even while unleashed. ----
+const UNLEASHED = A.unleashed === true || A.noCap === true
+
 // ---- derive the ceiling and the agent cap ----
 const candidates = [A.cap, hardTotal()].filter((n) => typeof n === 'number' && n > 0)
 const CEIL = candidates.length ? Math.min(...candidates) : DEFAULT_CAP
 const SOFT = Math.floor(CEIL * 0.8)
 const DERIVED = Math.max(AGENT_FLOOR, Math.min(AGENT_ROOF, Math.floor(SOFT / TOKENS_PER_AGENT)))
-const MAX_AGENTS = Math.min(
-  HARD_LIMIT,
-  typeof A.maxAgents === 'number' && A.maxAgents > 0 ? Math.max(4, A.maxAgents) : DERIVED
-)
+const explicitMax = typeof A.maxAgents === 'number' && A.maxAgents > 0 ? A.maxAgents : null
+const MAX_AGENTS = UNLEASHED
+  ? Math.min(HARD_LIMIT, explicitMax || HARD_LIMIT)
+  : Math.min(HARD_LIMIT, explicitMax ? Math.max(4, explicitMax) : DERIVED)
 
-// ---- the PRIMARY guard is a literal counter ----
+// ---- guards ----
 let spawned = 0
 const startSpent = spentNow()
-const overBudget = () => spentNow() - startSpent >= SOFT
-// per-phase ceilings so no single phase starves the rest (the grow-mode lesson)
+// unleashed bypasses the soft token budget; MAX_AGENTS and any hard budget.total still bound the run.
+const overBudget = () => (UNLEASHED ? false : spentNow() - startSpent >= SOFT)
 const SYNTH_RESERVE = 1
-const U_END = Math.max(2, Math.round(MAX_AGENTS * 0.18)) // Understand
-const D_END = U_END + Math.max(3, Math.round(MAX_AGENTS * 0.15)) // + Design (approaches + judge)
-const B_END = D_END + Math.max(2, Math.round(MAX_AGENTS * 0.27)) // + Build
-const R_END = Math.max(B_END + 1, MAX_AGENTS - SYNTH_RESERVE) // + Review/Repair (rest, minus the synth reserve)
-// gate: may spawn while under this phase ceiling AND the global cap AND not over budget
+// the FRONT arc (understand/design/initial build) gets a small GUARANTEED slice via phase ceilings,
+// kept lean (~35%) so the DYNAMIC back half — where opus escalations and gap-growth live — has room.
+const U_END = Math.max(2, Math.round(MAX_AGENTS * 0.12))
+const D_END = U_END + Math.max(3, Math.round(MAX_AGENTS * 0.1))
+const B_END = D_END + Math.max(2, Math.round(MAX_AGENTS * 0.13))
 const gate = (ceil) => spawned < Math.min(ceil, MAX_AGENTS) && !overBudget()
+// ...the DYNAMIC back half (escalation, review loop, tie-breaks, completeness, gap build) draws from the
+// rest of the global budget up to MAX_AGENTS, minus the synth reserve. This is where agents grow on demand.
+const canSpawnDyn = () => spawned < MAX_AGENTS - SYNTH_RESERVE && !overBudget()
 
 const dryStreakLimit = typeof A.dryStreakLimit === 'number' ? A.dryStreakLimit : 2
-const maxReviewRounds = typeof A.maxReviewRounds === 'number' ? A.maxReviewRounds : 4
+const maxReviewRounds = typeof A.maxReviewRounds === 'number' ? A.maxReviewRounds : UNLEASHED ? 8 : 4
+const maxImprovementRounds = typeof A.maxImprovementRounds === 'number' ? A.maxImprovementRounds : UNLEASHED ? 6 : 2
 
+if (UNLEASHED)
+  log(
+    `Strata/strata-ultra: ⚠️ UNLEASHED — soft cap & token budget IGNORED. ` +
+      `Bounded only by MAX_AGENTS=${MAX_AGENTS}${explicitMax ? ' (your maxAgents)' : ' (950 lifetime backstop)'} and any hard budget.total.`
+  )
 log(
-  `Strata/strata-ultra: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS} ` +
-    `(phase ceilings U=${U_END} D=${D_END} B=${B_END} R=${R_END}), ` +
-    `tiers scout=${TIER.scout} design=${TIER.design} judge=${TIER.judge} build=${TIER.build} review=${TIER.review} synth=${TIER.synth}`
+  `Strata/strata-ultra: cap=${CEIL} (${candidates.length ? 'set' : 'default'})${UNLEASHED ? ' [UNLEASHED]' : ''}, MAX_AGENTS=${MAX_AGENTS} ` +
+    `(front ceilings U=${U_END} D=${D_END} B=${B_END}; dynamic back half draws the rest), ` +
+    `tiers scout=${TIER.scout} design=${TIER.design} build=${TIER.build} review=${TIER.review} opus-for=judge/advice/tiebreak/critic/synth`
 )
 
 // ============================ schemas ============================
@@ -105,7 +118,7 @@ const MAP_SCHEMA = {
   additionalProperties: false,
   required: ['facts'],
   properties: {
-    facts: { type: 'array', items: { type: 'string' }, description: 'concrete, evidence-backed observations for this angle' },
+    facts: { type: 'array', items: { type: 'string' } },
     constraints: { type: 'array', items: { type: 'string' } },
     risks: { type: 'array', items: { type: 'string' } },
   },
@@ -115,12 +128,11 @@ const APPROACH_SCHEMA = {
   additionalProperties: false,
   required: ['approach', 'workUnits'],
   properties: {
-    approach: { type: 'string', description: 'the proposed approach, concrete and self-contained' },
+    approach: { type: 'string' },
     keyIdeas: { type: 'array', items: { type: 'string' } },
     tradeoffs: { type: 'array', items: { type: 'string' } },
     workUnits: {
       type: 'array',
-      description: 'the independent pieces this approach decomposes into',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -136,17 +148,18 @@ const JUDGE_SCHEMA = {
   required: ['winnerIndex', 'rationale'],
   properties: {
     winnerIndex: { type: 'integer' },
-    graft: { type: 'array', items: { type: 'string' }, description: 'ideas from the losing approaches to fold into the build' },
+    graft: { type: 'array', items: { type: 'string' } },
     rationale: { type: 'string' },
   },
 }
 const BUILD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['unitId', 'output'],
+  required: ['unitId', 'output', 'selfScore'],
   properties: {
     unitId: { type: 'string' },
-    output: { type: 'string', description: 'the produced artifact for this unit — ready to use' },
+    output: { type: 'string', description: 'the produced artifact CONTENT for this unit — not a file path' },
+    selfScore: { type: 'integer', description: 'your honest confidence 0-100 that this unit fully meets its spec' },
     notes: { type: 'string' },
   },
 }
@@ -164,9 +177,9 @@ const ISSUES_SCHEMA = {
         properties: {
           title: { type: 'string' },
           severity: { type: 'string', enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] },
-          unitId: { type: 'string', description: 'the work unit this issue is in (or "global")' },
+          unitId: { type: 'string' },
           evidence: { type: 'string' },
-          fix: { type: 'string', description: 'the suggested fix' },
+          fix: { type: 'string' },
         },
       },
     },
@@ -178,17 +191,42 @@ const VERDICT_SCHEMA = {
   required: ['isReal', 'reason'],
   properties: { isReal: { type: 'boolean' }, reason: { type: 'string' } },
 }
+const CRITIC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['complete'],
+  properties: {
+    complete: { type: 'boolean', description: 'true only if the deliverable fully satisfies the task' },
+    gaps: {
+      type: 'array',
+      description: 'missing pieces, each as a new work unit to build',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'instruction'],
+        properties: { id: { type: 'string' }, instruction: { type: 'string' } },
+      },
+    },
+    note: { type: 'string' },
+  },
+}
 const SYNTH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['deliverable'],
   properties: {
-    deliverable: { type: 'string', description: 'the final, assembled answer/artifact for the task' },
-    completeness: { type: 'string', description: 'what is fully done vs still missing' },
+    deliverable: { type: 'string' },
+    completeness: { type: 'string' },
     residualRisks: { type: 'array', items: { type: 'string' } },
-    coverageNote: { type: 'string', description: 'any gaps caused by the agent budget' },
+    coverageNote: { type: 'string' },
   },
 }
+
+// counters for the dynamic escalations (reported at the end)
+let adviceEscalations = 0
+let tiebreakers = 0
+let gapUnitsAdded = 0
+let improvementRounds = 0
 
 // ============================ Phase 1: UNDERSTAND ============================
 phase('Understand')
@@ -228,7 +266,7 @@ const DESIGN_LENSES = (
   Array.isArray(A.designLenses) && A.designLenses.length
     ? A.designLenses
     : ['simplicity-first', 'robustness-first (failure modes & scale)', 'pragmatic / reuse-existing', 'novel / challenge the obvious framing']
-).slice(0, Math.max(2, D_END - U_END - 1)) // leave room for the judge
+).slice(0, Math.max(2, D_END - U_END - 1))
 
 const approaches = (
   await parallel(
@@ -248,7 +286,8 @@ if (!approaches.length) {
   return { task: A.task, cap: CEIL, agentsSpawned: spawned, maxAgents: MAX_AGENTS, error: 'no viable design approach produced — raise the cap' }
 }
 
-let winner, graft = []
+let winner,
+  graft = []
 if (approaches.length === 1) {
   winner = approaches[0]
 } else if (gate(D_END)) {
@@ -268,107 +307,168 @@ if (approaches.length === 1) {
 } else {
   winner = approaches[0]
 }
+const graftBlock = graft.length ? `\nFold in these ideas where they help:\n- ${graft.join('\n- ')}\n` : ''
 
-// ============================ Phase 3: BUILD ============================
+// shared builder so initial build, gap build, and revise all behave the same
+const buildOne = (unit, gateFn, lbl) => {
+  if (!gateFn()) return Promise.resolve(null)
+  spawned++
+  return agent(
+    `Task:\n${A.task}\n\nChosen approach: ${winner.approach}\n${graftBlock}\nBuild THIS work unit only (id "${unit.id}"):\n${unit.instruction}\n\n` +
+      `Produce the finished artifact CONTENT in the \`output\` field — do NOT write files to disk or return a path. Set selfScore to your honest 0-100 confidence it fully meets the spec.`,
+    { label: lbl, phase: 'Build', model: TIER.build, schema: BUILD_SCHEMA }
+  )
+}
+
+// ============================ Phase 3: BUILD (+ dynamic opus advice for low-confidence units) ============================
 phase('Build')
 let workUnits = Array.isArray(winner.workUnits) && winner.workUnits.length ? winner.workUnits : [{ id: 'main', instruction: A.task }]
-// don't plan more units than the build budget can build
 const buildBudget = Math.max(1, Math.min(B_END, MAX_AGENTS) - spawned)
 if (workUnits.length > buildBudget) {
-  log(`build: ${workUnits.length} units planned but budget allows ${buildBudget}; building the first ${buildBudget}`)
+  log(`build: ${workUnits.length} units planned but front budget allows ${buildBudget}; building ${buildBudget} now (the completeness critic can grow the rest)`)
   workUnits = workUnits.slice(0, buildBudget)
 }
-const graftBlock = graft.length ? `\nFold in these ideas where they help:\n- ${graft.join('\n- ')}\n` : ''
-const built = (
-  await parallel(
-    workUnits.map((u) => () => {
-      if (!gate(B_END)) return null
-      spawned++
-      return agent(
-        `Task:\n${A.task}\n\nChosen approach: ${winner.approach}\n${graftBlock}\nBuild THIS work unit only (id "${u.id}"):\n${u.instruction}\n\nProduce the finished artifact for this unit, ready to use. Return the artifact CONTENT itself in the \`output\` field — do NOT write files to disk or return a file path.`,
-        { label: `build:${u.id}`, phase: 'Build', model: TIER.build, schema: BUILD_SCHEMA }
-      )
-    })
-  )
-).filter(Boolean)
-// artifacts: unitId -> output (mutated immutably each repair)
+const built = (await parallel(workUnits.map((u) => () => buildOne(u, () => gate(B_END), `build:${u.id}`)))).filter(Boolean)
 let artifacts = {}
 for (const b of built) artifacts = { ...artifacts, [b.unitId || 'main']: b.output }
 
-// ============================ Phase 4: REVIEW (loop-until-dry) ============================
+// DYNAMIC ESCALATION #1 — rescue low-confidence units with an opus advice pass, then a sonnet revise.
+for (const b of built) {
+  const uid = b.unitId || 'main'
+  if (typeof b.selfScore === 'number' && b.selfScore < ADVICE_THRESHOLD && canSpawnDyn()) {
+    spawned++
+    const advice = await agent(
+      `A builder rated its own work ${b.selfScore}/100 for this task:\n${A.task}\n\nUNIT "${uid}" instruction: ${(workUnits.find((u) => u.id === uid) || {}).instruction || '(gap unit)'}\n\nCURRENT OUTPUT:\n${b.output}\n\nGive expert, specific guidance to lift this unit to top quality — the concrete fixes and the bar it is missing. Do not rewrite it yourself.`,
+      { label: `advise:${uid}`, phase: 'Build', model: TIER.advise }
+    )
+    if (canSpawnDyn()) {
+      spawned++
+      adviceEscalations++
+      const revised = await agent(
+        `Task:\n${A.task}\n\nRevise UNIT "${uid}" using this expert advice. Return the full improved artifact CONTENT in \`output\`; do not write files.\n\nADVICE:\n${typeof advice === 'string' ? advice : ''}\n\nCURRENT:\n${artifacts[uid]}`,
+        { label: `revise:${uid}`, phase: 'Build', model: TIER.build, schema: BUILD_SCHEMA }
+      )
+      if (revised && revised.output) artifacts = { ...artifacts, [uid]: revised.output }
+    }
+  }
+}
+
+// ============================ Phase 4: REVIEW — dynamic loop (verify tie-breaks + completeness-grown gaps) ============================
 phase('Review')
 const RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
-const reviewDims = (
-  Array.isArray(A.reviewDimensions) && A.reviewDimensions.length
-    ? A.reviewDimensions
-    : SCOUT_PROFILES[A.taskClass]?.slice(0, 3) || ['correctness', 'robustness & edge cases', 'meets the task requirements']
-)
+const reviewDims = Array.isArray(A.reviewDimensions) && A.reviewDimensions.length
+  ? A.reviewDimensions
+  : SCOUT_PROFILES[A.taskClass]?.slice(0, 3) || ['correctness', 'robustness & edge cases', 'meets the task requirements']
 const reviewLog = []
-let dry = 0
-let round = 0
-while (round < maxReviewRounds && dry < dryStreakLimit && gate(R_END)) {
-  round++
-  const artifactsJson = JSON.stringify(artifacts, null, 2)
-  // -- find issues across dimensions (sonnet) --
-  const found = (
-    await parallel(
-      reviewDims.map((dim) => () => {
-        if (!gate(R_END)) return null
-        spawned++
-        return agent(
-          `Task being delivered:\n${A.task}\n\nCURRENT ARTIFACTS (unitId -> output):\n${artifactsJson}\n\n` +
-            `Review STRICTLY for: "${dim}". Report only concrete, evidence-backed issues, each tied to the unitId it lives in, with a suggested fix. If there are none, return an empty list.`,
-          { label: `review:${dim.slice(0, 18)}#${round}`, phase: 'Review', model: TIER.review, schema: ISSUES_SCHEMA }
-        )
-      })
-    )
-  )
-    .filter(Boolean)
-    .flatMap((r) => r.issues || [])
-    .filter((it) => it && it.title)
-    .sort((a, b) => (RANK[a.severity] ?? 9) - (RANK[b.severity] ?? 9))
 
-  // -- severity-gated adversarial verify (2 votes for CRITICAL/HIGH, else 1) --
-  const confirmed = []
-  for (const it of found) {
-    if (!gate(R_END)) break
-    const votes = it.severity === 'CRITICAL' || it.severity === 'HIGH' ? 2 : 1
-    const ballots = (
+// one review-until-dry pass over the current artifacts
+const reviewUntilDry = async () => {
+  let dry = 0
+  let round = 0
+  while (round < maxReviewRounds && dry < dryStreakLimit && canSpawnDyn()) {
+    round++
+    const artifactsJson = JSON.stringify(artifacts, null, 2)
+    const found = (
       await parallel(
-        Array.from({ length: votes }, () => () => {
-          if (!gate(R_END)) return null
+        reviewDims.map((dim) => () => {
+          if (!canSpawnDyn()) return null
           spawned++
           return agent(
-            `Adversarially verify this review issue against the artifact. Default to isReal=false unless the evidence clearly supports it.\n\nISSUE:\n${JSON.stringify(it)}\n\nARTIFACT unit "${it.unitId}":\n${artifacts[it.unitId] ?? '(not found)'}`,
-            { label: `verify:${it.title.slice(0, 18)}`, phase: 'Review', model: TIER.verify, schema: VERDICT_SCHEMA }
+            `Task being delivered:\n${A.task}\n\nCURRENT ARTIFACTS (unitId -> output):\n${artifactsJson}\n\n` +
+              `Review STRICTLY for: "${dim}". Report only concrete, evidence-backed issues, each tied to its unitId, with a suggested fix. Empty list if none.`,
+            { label: `review:${dim.slice(0, 16)}#${improvementRounds}.${round}`, phase: 'Review', model: TIER.review, schema: ISSUES_SCHEMA }
           )
         })
       )
-    ).filter(Boolean)
-    if (ballots.length && ballots.filter((v) => v.isReal).length >= Math.ceil(ballots.length / 2)) confirmed.push(it)
-  }
-
-  reviewLog.push({ round, found: found.length, confirmed: confirmed.length })
-  if (!confirmed.length) {
-    dry++
-    continue
-  }
-  dry = 0
-
-  // -- repair: re-build each affected unit with the confirmed issue(s) as guidance (sonnet) --
-  const byUnit = {}
-  for (const it of confirmed) (byUnit[it.unitId] = byUnit[it.unitId] || []).push(it)
-  for (const [unitId, issues] of Object.entries(byUnit)) {
-    if (!gate(R_END)) break
-    if (artifacts[unitId] === undefined) continue
-    spawned++
-    const fixed = await agent(
-      `Task:\n${A.task}\n\nFix the confirmed issues in this unit, preserving what works. Return the full corrected artifact CONTENT in the \`output\` field — do NOT write files to disk or return a file path.\n\n` +
-        `UNIT "${unitId}" CURRENT:\n${artifacts[unitId]}\n\nCONFIRMED ISSUES:\n${JSON.stringify(issues, null, 2)}`,
-      { label: `repair:${unitId}#${round}`, phase: 'Review', model: TIER.repair, schema: BUILD_SCHEMA }
     )
-    if (fixed && fixed.output) artifacts = { ...artifacts, [unitId]: fixed.output }
+      .filter(Boolean)
+      .flatMap((r) => r.issues || [])
+      .filter((it) => it && it.title)
+      .sort((a, b) => (RANK[a.severity] ?? 9) - (RANK[b.severity] ?? 9))
+
+    const confirmed = []
+    for (const it of found) {
+      if (!canSpawnDyn()) break
+      const high = it.severity === 'CRITICAL' || it.severity === 'HIGH'
+      const votes = high ? 2 : 1
+      const ballots = (
+        await parallel(
+          Array.from({ length: votes }, () => () => {
+            if (!canSpawnDyn()) return null
+            spawned++
+            return agent(
+              `Adversarially verify this review issue against the artifact. Default to isReal=false unless the evidence clearly supports it.\n\nISSUE:\n${JSON.stringify(it)}\n\nARTIFACT unit "${it.unitId}":\n${artifacts[it.unitId] ?? '(not found)'}`,
+              { label: `verify:${it.title.slice(0, 16)}`, phase: 'Review', model: TIER.verify, schema: VERDICT_SCHEMA }
+            )
+          })
+        )
+      ).filter(Boolean)
+      if (!ballots.length) continue
+      const real = ballots.filter((v) => v.isReal).length
+      let isReal
+      // DYNAMIC ESCALATION #2 — verifiers split on a high-severity issue → spawn an opus tie-breaker.
+      if (ballots.length === 2 && real === 1 && high && canSpawnDyn()) {
+        spawned++
+        tiebreakers++
+        const tb = await agent(
+          `Two reviewers disagree on whether this issue is real. You are the deciding opus vote. Judge strictly.\n\nISSUE:\n${JSON.stringify(it)}\n\nARTIFACT unit "${it.unitId}":\n${artifacts[it.unitId] ?? '(not found)'}`,
+          { label: `tiebreak:${it.title.slice(0, 14)}`, phase: 'Review', model: TIER.tiebreak, schema: VERDICT_SCHEMA }
+        )
+        isReal = !!(tb && tb.isReal)
+      } else {
+        isReal = real >= Math.ceil(ballots.length / 2)
+      }
+      if (isReal) confirmed.push(it)
+    }
+
+    reviewLog.push({ pass: improvementRounds, round, found: found.length, confirmed: confirmed.length })
+    if (!confirmed.length) {
+      dry++
+      continue
+    }
+    dry = 0
+
+    const byUnit = {}
+    for (const it of confirmed) (byUnit[it.unitId] = byUnit[it.unitId] || []).push(it)
+    for (const [unitId, issues] of Object.entries(byUnit)) {
+      if (!canSpawnDyn()) break
+      if (artifacts[unitId] === undefined) continue
+      spawned++
+      const fixed = await agent(
+        `Task:\n${A.task}\n\nFix the confirmed issues in this unit, preserving what works. Return the full corrected artifact CONTENT in \`output\`; do NOT write files.\n\n` +
+          `UNIT "${unitId}" CURRENT:\n${artifacts[unitId]}\n\nCONFIRMED ISSUES:\n${JSON.stringify(issues, null, 2)}`,
+        { label: `repair:${unitId}#${improvementRounds}`, phase: 'Review', model: TIER.repair, schema: BUILD_SCHEMA }
+      )
+      if (fixed && fixed.output) artifacts = { ...artifacts, [unitId]: fixed.output }
+    }
   }
+}
+
+// DYNAMIC OUTER LOOP — review-until-dry, then an opus completeness critic GROWS new units for any gaps,
+// builds them, and re-enters review. Repeats until the critic says complete, or the budget/cap is reached.
+while (true) {
+  await reviewUntilDry()
+  if (!canSpawnDyn() || improvementRounds >= maxImprovementRounds) break
+  improvementRounds++
+  spawned++
+  const critic = await agent(
+    `Task:\n${A.task}\n\nCURRENT DELIVERABLE (unitId -> output):\n${JSON.stringify(artifacts, null, 2)}\n\n` +
+      `You are a completeness critic. Does this FULLY satisfy the task? If not, return complete=false and list the missing pieces as concrete new work units (id + instruction). Be exacting — only call it complete when it truly is.`,
+    { label: `completeness#${improvementRounds}`, phase: 'Review', model: TIER.critic, schema: CRITIC_SCHEMA }
+  )
+  if (critic.complete || !(critic.gaps && critic.gaps.length)) break
+  // DYNAMIC ESCALATION #3 — build the gap units the critic identified
+  let added = 0
+  for (const g of critic.gaps) {
+    if (!canSpawnDyn()) break
+    const b = await buildOne(g, canSpawnDyn, `build-gap:${g.id}`)
+    if (b && b.output) {
+      artifacts = { ...artifacts, [b.unitId || g.id]: b.output }
+      added++
+      gapUnitsAdded++
+    }
+  }
+  if (!added) break
 }
 
 // ============================ Phase 5: SYNTHESIZE (the thin opus cap, always runs) ============================
@@ -380,7 +480,7 @@ try {
     `Task:\n${A.task}\n\nUNDERSTANDING:\n${JSON.stringify(mapDigest, null, 2)}\n\n` +
       `CHOSEN APPROACH: ${winner.approach}\n\nBUILT & REPAIRED ARTIFACTS (unitId -> output):\n${JSON.stringify(artifacts, null, 2)}\n\n` +
       `REVIEW HISTORY: ${JSON.stringify(reviewLog)}\n\n` +
-      `Assemble the final deliverable for the task. Be a completeness critic: explicitly state what is fully done vs still missing, and note any gaps the agent budget forced.`,
+      `Assemble the final deliverable for the task. Be a completeness critic: state what is fully done vs still missing, and note any gaps the agent budget forced.`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
 } catch (e) {
@@ -392,17 +492,21 @@ try {
   }
 }
 
-log(`done: ${spawned} agents, ${approaches.length} approaches, ${Object.keys(artifacts).length} units, ${round} review rounds, ~${Math.max(0, spentNow() - startSpent)} output tokens this run`)
+log(
+  `done: ${spawned} agents (${adviceEscalations} advice-escalations, ${tiebreakers} tie-breakers, ${gapUnitsAdded} gap-units over ${improvementRounds} improvement rounds), ` +
+    `${Object.keys(artifacts).length} units, ~${Math.max(0, spentNow() - startSpent)} output tokens this run`
+)
 return {
   task: A.task,
   cap: CEIL,
   capWasSet: candidates.length > 0,
+  unleashed: UNLEASHED,
   agentsSpawned: spawned,
   maxAgents: MAX_AGENTS,
   approaches: approaches.length,
   winnerLens: winner.lens || null,
   unitCount: Object.keys(artifacts).length,
-  reviewRounds: round,
+  dynamic: { adviceEscalations, tiebreakers, gapUnitsAdded, improvementRounds },
   reviewLog,
   artifacts,
   synthesis,

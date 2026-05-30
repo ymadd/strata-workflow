@@ -17,7 +17,7 @@ The binding guarantees live in **code** (the bundled workflows), not prose — b
 - **panel — `strata-panel`** (decide): for ONE problem with many valid approaches, generate N independent designs from DISTINCT lenses, have an opus panel judge them on caller-supplied axes, then synthesize a winner that grafts the best runner-up ideas. Opus = advise + judge + synth; the diverge bulk is sonnet. → see "PANEL mode".
 - **scale — `strata-scale`** (throughput): when the work-list is already known, fan out N independent units deliberately, but on a right-sized model (sonnet default; opus never per-unit) with schema-bounded output. An optional opus **advise** pre-pass lifts every cheap worker. → see "SCALE mode".
 - **grow — `strata-grow`** (self-improving loop): auto-generate rounds (= phases) — Plan → Build → Audit → Repair — and grow toward the agent cap, ultracode-style loop-until-cap/dry, with **/advice self-escalation** inside Build. → see "PROGRESSIVE mode".
-- **ultra — `strata-ultra`** (the full arc, "do the most"): ultracode's end-to-end task arc — understand → design → build → review (loop-until-dry) → synthesize — for taking ONE substantial task to completion, exhaustively but on Strata's leash (hard agent-count cap; opus kept to a thin judge + synth layer). The deliberate opposite of `focus`. → see "ULTRA mode".
+- **ultra — `strata-ultra`** (the full arc, "do the most"): ultracode's end-to-end task arc — understand → design → build → review → synthesize — that **dynamically spawns more agents where the work needs them** (opus advice for weak builds, an opus tie-breaker on split verdicts, an opus completeness critic that grows new units until done). On Strata's leash by default, or fully `unleashed`. The deliberate opposite of `focus`. → see "ULTRA mode".
 - **`strata-audit`** — a thin opus oversight layer that grades a large generated batch and returns systemic issues + a regenerate list.
 
 Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; **panel = many proposed, one chosen**; scale = many done cheaply; grow = many grown cheaply while self-improving; **ultra = one task done exhaustively, capped**. **panel decides; scale/grow build; ultra does the whole arc** — panel composes as a front stage (panel picks the design → grow/scale builds it), while ultra is the all-in-one when you want focus's rigor scaled up to a full task.
@@ -150,22 +150,25 @@ Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-grow.js", args: {
 - The return carries `done`, `goalResidual`, `auditAvg`, `covered`, `total` — everything needed to report progress and resume.
 
 ## ULTRA mode (strata-ultra) — how to call
-For taking ONE substantial task end-to-end with maximum rigor. Runs ultracode's full arc — **understand → design → build → review (loop-until-dry) → synthesize** — but bounded: a hard agent-count cap, and opus kept to a thin **judge + synth** layer (everything else is haiku/sonnet). This is the deliberate opposite of `focus`: where focus does the least, ultra does the most the cap allows.
+For taking ONE substantial task end-to-end with maximum rigor. Runs ultracode's full arc — **understand → design → build → review → synthesize** — and **DYNAMICALLY spawns more agents where the work needs them** (not a fixed pipeline). Still bounded: a hard agent-count cap, and opus spawned only where judgment is needed. The deliberate opposite of `focus`: where focus does the least, ultra does the most the budget allows.
 ```js
 Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-ultra.js", args: {
   task: "<the one substantial task>",
   taskClass: "review|research|implement|migrate",   // tunes scout angles & review dimensions
-  cap: 300000,                                       // derives MAX_AGENTS (ultra roof is higher: ≤120)
-  maxAgents: 0,                                       // optional explicit override (else cap-derived)
+  cap: 500000,                                       // derives MAX_AGENTS (ultra roof ≤120). higher cap = more dynamics fire
+  unleashed: false,                                  // true = ignore the cap entirely (see below)
+  maxAgents: 0,                                      // optional explicit override / safety bound (else cap-derived)
+  adviceThreshold: 78,                               // build selfScore below this triggers an opus advice+revise
   designLenses: [ /* distinct approach angles; omit for defaults */ ],
   reviewDimensions: [ "correctness", "security", "edge cases" ],
-  dryStreakLimit: 2,                                 // review loops until this many empty rounds
-  maxReviewRounds: 4
+  dryStreakLimit: 2, maxReviewRounds: 4, maxImprovementRounds: 2
 } })
 ```
-- **Per-phase ceilings** keep one phase from starving the rest (Understand ~18% / Design ~15% / Build ~27% / Review = the rest; synth reserved). The review loop self-terminates on `dryStreakLimit` empty rounds, `maxReviewRounds`, or the cap.
-- Returns `{ winnerLens, unitCount, reviewRounds, reviewLog, artifacts (unitId→output), synthesis (deliverable + completeness + residualRisks) }`.
-- **ultra runs hot** — it re-passes the full artifact set to every review/verify/repair agent, so token spend per agent is higher than other modes (its `TOKENS_PER_AGENT` estimate is set higher to compensate). The agent-count cap is still the hard guarantee; the token cap is approximate and ultra will overshoot it more than focus/scale. Budget accordingly (300k+ is a sensible floor for a real task).
+- **Dynamic escalation (opus spawned only on demand):** (1) a build unit that self-rates below `adviceThreshold` gets an opus **advice** pass + a sonnet **revise**; (2) when two verifiers **split** on a CRITICAL/HIGH issue, an opus **tie-breaker** decides; (3) when review goes dry, an opus **completeness critic** grows NEW work units for any gaps, builds them, and re-enters review — looping until it declares the deliverable complete or the budget runs out.
+- **Budget split:** the front arc (understand/design/initial build) takes a lean guaranteed slice (~35%); the rest is the **dynamic back half** where escalation + gap-growth live. So a bigger cap doesn't just add agents — it lets more of the dynamic behavior actually fire. The advice/completeness passes need headroom: budget **500k+** (≈30+ agents) to see them, not just the tie-breaker.
+- Returns `{ winnerLens, unitCount, dynamic: { adviceEscalations, tiebreakers, gapUnitsAdded, improvementRounds }, reviewLog, artifacts (unitId→output), synthesis }`.
+- **`unleashed: true`** drops the leash entirely (true ultracode — "token cost is no constraint"): the cap-derived ceiling AND the soft token budget are ignored. The only remaining guards are the runtime's **950-agent lifetime backstop** and any `+Ntokens` hard `budget.total`. Pass an explicit `maxAgents` to bound it safely even while unleashed. Use deliberately — this is the one mode that can spend a lot.
+- **ultra runs hot** — it re-passes the full artifact set to every review/verify/repair agent, so per-agent spend is high and it overshoots the token cap more than focus/scale (the agent-count counter is the hard guarantee). For **implement** tasks the build agents may also write files — invoke it from the target directory.
 
 ## What the code guarantees (the binding lives here, not in prose)
 - **Primary guard = a literal agent counter** (needs no API, cannot fail): `MAX_AGENTS = clamp(floor(0.8*cap / 12k), 4, 40)` for focus/scale; an explicit `maxAgents` (≤950) for grow. Checked before every `agent()`.
