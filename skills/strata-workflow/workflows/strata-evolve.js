@@ -48,13 +48,6 @@ const spentNow = () => {
     return 0
   }
 }
-const remainingNow = () => {
-  try {
-    return budget.remaining()
-  } catch (e) {
-    return Infinity
-  }
-}
 const hardTotal = () => {
   try {
     return budget.total
@@ -76,7 +69,8 @@ const MAX_AGENTS = UNLEASHED
 // self-propagation backstops: bound the phase queue and the subdivision recursion so it can't run away
 const MAX_DEPTH = typeof A.maxDepth === 'number' && A.maxDepth >= 0 ? A.maxDepth : 3
 const MAX_PHASES = typeof A.maxPhases === 'number' && A.maxPhases > 0 ? A.maxPhases : Math.min(40, Math.max(6, MAX_AGENTS))
-const SYNTH_RESERVE = 2 // keep room for the final synthesis (+ a closing PM goal-critic)
+const SYNTH_RESERVE = 1 // keep room for the final synthesis (the only guaranteed post-loop opus call)
+const MAX_REPAIRS = typeof A.maxRepairs === 'number' && A.maxRepairs >= 0 ? A.maxRepairs : 2 // per-phase repair cap (subdivide is depth-bounded; repair needs its own so one failing phase can't starve the queue)
 const IDEATION = A.ideation === 'conservative' ? 'conservative' : 'bold'
 const ROOT = A.root ? String(A.root) : '.'
 
@@ -353,7 +347,14 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
   phasesRun++
 
   // EXECUTE: fan out sonnet workers (barrier — the audit needs the whole phase output)
-  const want = Math.max(1, Math.min(ph.agents, MAX_AGENTS - SYNTH_RESERVE - spawned))
+  const want = Math.min(ph.agents, Math.max(0, MAX_AGENTS - SYNTH_RESERVE - spawned))
+  if (want <= 0) {
+    // no worker budget left — restore the phase as unrun and stop (don't feed an empty build to grade/director as a ghost phase)
+    queue.unshift(ph)
+    phasesRun--
+    evolution.push(`HALT before ${ph.id} (${ph.kind}): no agent budget for workers`)
+    break
+  }
   const thunks = []
   for (let w = 0; w < want; w++) {
     if (!canSpawnWork()) break
@@ -371,7 +372,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
   const built = (await parallel(thunks)).filter(Boolean)
   built.forEach((b) => artifacts.push({ phase: ph.id, kind: ph.kind, ...b }))
   const phaseFiles = built.flatMap((b) => b.filesWritten || [])
-  const minScore = built.length ? Math.min(...built.map((b) => (typeof b.selfScore === 'number' ? b.selfScore : 50))) : 0
+  const minScore = built.length ? Math.min(...built.map((b) => (typeof b.selfScore === 'number' && !Number.isNaN(b.selfScore) ? b.selfScore : 50))) : 0
 
   // GRADE: one cheap sonnet auditor checks the phase output against the phase goal
   let grade = { meetsPhaseGoal: true, score: minScore, issues: [] }
@@ -389,6 +390,8 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
     }
   }
   const blocking = (grade.issues || []).filter((i) => i.severity === 'CRITICAL' || i.severity === 'HIGH')
+  // sort by severity so the slice(0,12) fed to the director keeps the most severe issues (RANK: lower = more severe)
+  const sortedIssues = (grade.issues || []).slice().sort((a, b) => (RANK[a.severity] ?? 4) - (RANK[b.severity] ?? 4))
 
   // DIRECTOR audit (opus): decide PASS / SUBDIVIDE / REPAIR and mutate the queue
   let dir = { decision: 'pass', productImpact: false, reason: 'no director (budget)' }
@@ -400,7 +403,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
           `You are the ENGINEERING DIRECTOR auditing a just-finished phase of an evolving build. Decide how the plan should react.\n\n${charterBlock}\n\n` +
             `PHASE [${ph.id}/${ph.kind}] (depth ${ph.depth}): ${ph.goal}\n` +
             `GRADE: meetsGoal=${grade.meetsPhaseGoal}, score=${grade.score}, blockingIssues=${blocking.length}, workerMinSelfScore=${minScore}\n` +
-            `ISSUES:\n${JSON.stringify((grade.issues || []).slice(0, 12), null, 2)}\n\n` +
+            `ISSUES:\n${JSON.stringify(sortedIssues.slice(0, 12), null, 2)}\n\n` +
             `Choose:\n- pass: the phase met its goal; advance.\n- subdivide: this phase is IMPORTANT, RISKY, or UNDERDONE — split it into finer sub-phases (each with focused agents) that will be inserted next. Use this to pour MORE effort exactly where it matters.\n- repair: re-run the failed parts (give repairFocus).\n` +
             (ph.depth >= MAX_DEPTH ? `\nNOTE: max subdivision depth reached for this branch — do NOT subdivide; choose pass or repair.\n` : '') +
             `Set productImpact=true if the product changed enough that the PM should re-check vision now.`,
@@ -417,9 +420,19 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
     queue.unshift(...subs) // insert NEXT — this is the self-propagation
     evolution.push(`SUBDIVIDE ${ph.id} (score ${grade.score}) → ${subs.length} sub-phases [${subs.map((s) => s.id).join(', ')}]: ${dir.reason}`)
     log(`evolve: subdivided ${ph.id} into ${subs.length} sub-phases (depth ${ph.depth + 1})`)
-  } else if (dir.decision === 'repair' && canSpawnWork()) {
-    queue.unshift({ goal: ph.goal, kind: ph.kind, agents: ph.agents, depth: ph.depth, id: `${ph.id}r`, repairFocus: dir.repairFocus || 'fix the blocking issues' })
-    evolution.push(`REPAIR ${ph.id} (score ${grade.score}): ${dir.repairFocus || dir.reason}`)
+  } else if (dir.decision === 'repair') {
+    // repair is NOT depth-bounded like subdivide — give it its own per-phase cap so one failing phase can't repair-loop the whole MAX_PHASES budget
+    const attempts = (ph.repairCount || 0) + 1
+    if (attempts > MAX_REPAIRS) {
+      evolution.push(`REPAIR-CAP ${ph.id}: max repairs (${MAX_REPAIRS}) reached — advancing with score ${grade.score}`)
+      log(`evolve: ${ph.id} hit repair cap (${MAX_REPAIRS}), advancing`)
+    } else if (canSpawnWork()) {
+      queue.unshift({ goal: ph.goal, kind: ph.kind, agents: ph.agents, depth: ph.depth, id: `${ph.id}r`, repairFocus: dir.repairFocus || 'fix the blocking issues', repairCount: attempts })
+      evolution.push(`REPAIR ${ph.id} (attempt ${attempts}, score ${grade.score}): ${dir.repairFocus || dir.reason}`)
+    } else {
+      // a repair the director WANTED but the budget blocked — record it honestly, don't mislabel as PASS
+      evolution.push(`REPAIR-SKIPPED ${ph.id} (score ${grade.score}): cap reached — ${dir.repairFocus || dir.reason}`)
+    }
   } else {
     evolution.push(`PASS ${ph.id} (${ph.kind}, score ${grade.score})`)
   }
@@ -439,17 +452,22 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
           { label: `pm:check`, phase: 'Evolve', model: TIER.pm, schema: PM_SCHEMA }
         )) || pmFinal
       pmFinal = pm
-      if (Array.isArray(pm.revisePhases) && pm.revisePhases.length && canSpawnWork()) {
-        const adds = pm.revisePhases.slice(0, 5).map((p, i) => ({ ...p, agents: clampAgents(p.agents), depth: 0, id: `R${seq + i + 1}` }))
-        seq += adds.length
-        queue.push(...adds) // append downstream
-        evolution.push(`PM REVISE: appended ${adds.length} phase(s) [${adds.map((a) => a.id).join(', ')}]: ${pm.reason}`)
-        log(`evolve: PM appended ${adds.length} phase(s)`)
-      }
-      if (pm.goalMet && queue.length === 0) {
+      // goal-critic wins: if the PM declares all criteria met, stop — even if phases remain queued (they become phasesUnrun / gold-plating). Check BEFORE appending revisePhases so a goalMet+revise response can't swallow the stop signal.
+      if (pm.goalMet) {
         evolution.push(`PM: goal MET — vision satisfied, stopping.`)
         log(`evolve: PM declared goal met after ${phasesRun} phases`)
         break
+      }
+      if (Array.isArray(pm.revisePhases) && pm.revisePhases.length && canSpawnWork()) {
+        // clamp the append to remaining phase headroom so the queue can't balloon past MAX_PHASES
+        const headroom = Math.max(0, MAX_PHASES - phasesRun - queue.length)
+        const adds = pm.revisePhases.slice(0, Math.min(5, headroom)).map((p, i) => ({ ...p, agents: clampAgents(p.agents), depth: 0, id: `R${seq + i + 1}` }))
+        seq += adds.length
+        if (adds.length) {
+          queue.push(...adds) // append downstream
+          evolution.push(`PM REVISE: appended ${adds.length} phase(s) [${adds.map((a) => a.id).join(', ')}]: ${pm.reason}`)
+          log(`evolve: PM appended ${adds.length} phase(s)`)
+        }
       }
       if (!pm.onVision) evolution.push(`PM: drift flagged — ${pm.reason}`)
     } catch (e) {
@@ -462,7 +480,9 @@ if (!canSpawnWork() && queue.length) evolution.push(`Stopped: agent/budget cap w
 
 // ---- Phase 5: SYNTHESIZE — assemble the deliverable + the evolution log ----
 phase('Synthesize')
-spawned++ // synthesis always runs
+// synthesis always runs (it consumes the SYNTH_RESERVE slot the loop held back); never let the always-on increment push the counter past the hard backstop
+if (spawned < HARD_LIMIT) spawned++
+else log(`evolve: WARNING synthesis running at HARD_LIMIT (${spawned}) — not incrementing the counter`)
 let synthesis
 try {
   synthesis = await agent(
