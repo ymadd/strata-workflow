@@ -9,6 +9,18 @@
     {
       "name": "strata-workflow",
       "source": "./",
+      "category": "orchestration",
+      "keywords": [
+        "dynamic-workflow",
+        "orchestration",
+        "multi-agent",
+        "subagents",
+        "claude-code",
+        "plugin",
+        "skill",
+        "model-tiering",
+        "ultracode"
+      ],
       "description": "Built on dynamic Workflows + ultracode — structured multi-agent fan-out (focus / review / sweep / panel / scale / grow / ultra / evolve + audit) that caps agent count and reserves opus for a thin plan/advise/judge/audit layer. Same orchestration power, a fraction of the token burn."
     }
   ]

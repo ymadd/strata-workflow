@@ -12,11 +12,17 @@
   "license": "MIT",
   "keywords": [
     "orchestration",
+    "agent-orchestration",
     "subagents",
+    "multi-agent",
+    "dynamic-workflow",
     "workflow",
+    "claude-code",
+    "plugin",
+    "skill",
     "model-tiering",
     "budget",
     "fan-out",
-    "agents"
+    "ultracode"
   ]
 }
