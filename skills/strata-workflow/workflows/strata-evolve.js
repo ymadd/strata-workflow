@@ -1,12 +1,12 @@
 export const meta = {
   name: 'strata-evolve',
   description:
-    "Autonomous, self-propagating development. A PM (opus) owns the vision — turns the user's goal into a charter, selects which bold ideas to fold in, and is the goal-critic. A DIRECTOR (opus) owns execution — drafts an EMERGENT phase plan (not a fixed arc), and at each phase audit decides PASS / SUBDIVIDE (split an important-or-risky phase into finer sub-phases and spawn MORE agents) / REVISE (insert/reorder downstream phases) / REPAIR. Sonnet workers build the real artifacts each phase. The phase plan grows itself until the PM judges the vision met, or the agent cap / budget is hit. Distinct from ultra (fixed understand→design→build→review→synth arc) and grow (fixed Plan→Build→Audit→Repair rounds): in evolve the PHASES THEMSELVES are created and mutated by the overseers. Count-bounded (≤950), depth-bounded, and model-tiered like every Strata mode.",
+    "Autonomous, self-propagating development. A PM (opus) owns the vision — turns the user's goal into a charter, selects which bold ideas to fold in, and is the goal-critic. A DIRECTOR (opus) owns execution — drafts an EMERGENT phase plan (not a fixed arc), and at each phase audit PROPOSES PASS / SUBDIVIDE (split an important-or-risky phase into finer sub-phases and spawn MORE agents) / REPAIR. After the Director, the PM SELECTS every cycle — adopts, trims, or overrides the Director's call and judges whether the vision is met (Ideate-style propose → select). Sonnet workers build the real artifacts each phase, and each emergent phase runs in its own live progress group. The phase plan grows itself until the PM judges the vision met, or the agent cap / budget is hit. Distinct from ultra (fixed understand→design→build→review→synth arc) and grow (fixed Plan→Build→Audit→Repair rounds): in evolve the PHASES THEMSELVES are created and mutated by the overseers. Count-bounded (≤950), depth-bounded, and model-tiered like every Strata mode.",
   phases: [
     { title: 'Charter', detail: 'PM (opus) turns the vision into objective + acceptance criteria + priorities' },
     { title: 'Ideate', detail: 'opus proposes bold vision-aligned ideas; PM selects the value-high / risk-low ones to fold in' },
     { title: 'Plan', detail: 'Director (opus) drafts the initial emergent phase plan' },
-    { title: 'Evolve', detail: 'per phase: sonnet workers build → audit → Director mutates the plan (subdivide/revise/repair) → PM checks vision' },
+    { title: 'Evolve', detail: 'each emergent phase gets its own live group: sonnet workers build → grade → Director PROPOSES (subdivide/repair/pass) → PM SELECTS/arbitrates + goal-critic → plan mutates' },
     { title: 'Synthesize', detail: 'opus assembles the deliverable + an evolution log of how the plan grew' },
   ],
 }
@@ -210,13 +210,20 @@ const DIRECTOR_SCHEMA = {
     reason: { type: 'string' },
   },
 }
-const PM_SCHEMA = {
+// PM SELECT: the PM runs AFTER the Director every cycle. It is the goal-critic AND the arbiter —
+// it reviews the Director's proposed plan-mutation and decides whether to adopt it, trim it, or override it.
+// (Mirrors the Ideate phase: the team proposes, the PM selects what to adopt.)
+const PM_SELECT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['onVision', 'goalMet', 'reason'],
+  required: ['adopt', 'onVision', 'goalMet', 'reason'],
   properties: {
+    adopt: { type: 'boolean', description: "adopt the Director's proposed decision as-is? false = you are overriding or trimming it" },
+    override: { type: 'string', enum: ['pass', 'repair', 'subdivide', 'none'], description: "if adopt=false, the decision to take INSTEAD of the Director's (none = keep the Director's decision but apply your trims)" },
+    subPhasesKeep: { type: 'integer', description: "when the effective decision is subdivide: how many of the Director's proposed sub-phases to keep (trim gold-plating); omit to keep all" },
+    repairFocus: { type: 'string', description: 'when you override to repair: exactly what to fix' },
     onVision: { type: 'boolean', description: 'is the work still serving the user vision and acceptance criteria?' },
-    goalMet: { type: 'boolean', description: 'are ALL acceptance criteria satisfied — is the deliverable done?' },
+    goalMet: { type: 'boolean', description: 'are ALL acceptance criteria satisfied — is the deliverable done? Set true ONLY when every criterion is met.' },
     residual: { type: 'array', items: { type: 'string' }, description: 'acceptance criteria not yet met' },
     revisePhases: {
       type: 'array',
@@ -346,6 +353,13 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
   const ph = queue.shift()
   phasesRun++
 
+  // VARIABLE LABEL: each emergent phase gets its OWN live progress group (P1, P1r, P2, P2.1 …) instead of
+  // collapsing into one static "Evolve" box — so the left panel reflects the plan as it self-propagates.
+  // The same string is passed as opts.phase to every agent() below so it survives parallel()'s race on the
+  // global phase() state.
+  const evolveLabel = `Evolve ${ph.id}·${ph.kind}`
+  phase(evolveLabel)
+
   // EXECUTE: fan out sonnet workers (barrier — the audit needs the whole phase output)
   const want = Math.min(ph.agents, Math.max(0, MAX_AGENTS - SYNTH_RESERVE - spawned))
   if (want <= 0) {
@@ -365,7 +379,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
         `You are a senior engineer EXECUTING one phase of an evolving build. Do the actual work and WRITE REAL FILES under ${ROOT} (create/modify on disk; do not just describe).\n\n${visionBlock}\n\n` +
           `CURRENT PHASE [${ph.id}/${ph.kind}]: ${ph.goal}${ph.repairFocus ? `\nREPAIR FOCUS: ${ph.repairFocus}` : ''}${slice}\n\n` +
           `Build to the charter's quality bar. Report the files you wrote, key decisions, and an honest selfScore.`,
-        { label: `build:${ph.id}${want > 1 ? `#${w + 1}` : ''}`, phase: 'Evolve', model: TIER.build, schema: WORKER_SCHEMA }
+        { label: `build:${ph.id}${want > 1 ? `#${w + 1}` : ''}`, phase: evolveLabel, model: TIER.build, schema: WORKER_SCHEMA }
       )
     )
   }
@@ -383,7 +397,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
         (await agent(
           `Audit the output of this build phase against its goal. Read the files that were written and check for real defects (correctness, completeness, integration). Be concrete.\n\n` +
             `PHASE [${ph.id}/${ph.kind}]: ${ph.goal}\nFILES WRITTEN: ${phaseFiles.join(', ') || '(none reported)'}\nWORKER NOTES: ${built.map((b) => b.notes).filter(Boolean).join(' | ').slice(0, 800)}\n\nReturn meetsPhaseGoal, a 0-100 score, and any issues.`,
-          { label: `grade:${ph.id}`, phase: 'Evolve', model: TIER.grade, schema: GRADE_SCHEMA }
+          { label: `grade:${ph.id}`, phase: evolveLabel, model: TIER.grade, schema: GRADE_SCHEMA }
         )) || grade
     } catch (e) {
       /* keep optimistic fallback */
@@ -393,87 +407,112 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
   // sort by severity so the slice(0,12) fed to the director keeps the most severe issues (RANK: lower = more severe)
   const sortedIssues = (grade.issues || []).slice().sort((a, b) => (RANK[a.severity] ?? 4) - (RANK[b.severity] ?? 4))
 
-  // DIRECTOR audit (opus): decide PASS / SUBDIVIDE / REPAIR and mutate the queue
+  // DIRECTOR audit (opus): PROPOSE pass / subdivide / repair (the PM arbitrates it next).
   let dir = { decision: 'pass', productImpact: false, reason: 'no director (budget)' }
   if (canSpawnWork()) {
     spawned++
     try {
       dir =
         (await agent(
-          `You are the ENGINEERING DIRECTOR auditing a just-finished phase of an evolving build. Decide how the plan should react.\n\n${charterBlock}\n\n` +
+          `You are the ENGINEERING DIRECTOR auditing a just-finished phase of an evolving build. PROPOSE how the plan should react — the Product Manager will review your call.\n\n${charterBlock}\n\n` +
             `PHASE [${ph.id}/${ph.kind}] (depth ${ph.depth}): ${ph.goal}\n` +
             `GRADE: meetsGoal=${grade.meetsPhaseGoal}, score=${grade.score}, blockingIssues=${blocking.length}, workerMinSelfScore=${minScore}\n` +
             `ISSUES:\n${JSON.stringify(sortedIssues.slice(0, 12), null, 2)}\n\n` +
             `Choose:\n- pass: the phase met its goal; advance.\n- subdivide: this phase is IMPORTANT, RISKY, or UNDERDONE — split it into finer sub-phases (each with focused agents) that will be inserted next. Use this to pour MORE effort exactly where it matters.\n- repair: re-run the failed parts (give repairFocus).\n` +
             (ph.depth >= MAX_DEPTH ? `\nNOTE: max subdivision depth reached for this branch — do NOT subdivide; choose pass or repair.\n` : '') +
             `Set productImpact=true if the product changed enough that the PM should re-check vision now.`,
-          { label: `director:${ph.id}`, phase: 'Evolve', model: TIER.director, schema: DIRECTOR_SCHEMA }
+          { label: `director:${ph.id}`, phase: evolveLabel, model: TIER.director, schema: DIRECTOR_SCHEMA }
         )) || dir
     } catch (e) {
       /* keep pass fallback */
     }
   }
 
-  // APPLY the director's decision (bounded by depth + the literal counter)
-  if (dir.decision === 'subdivide' && ph.depth < MAX_DEPTH && Array.isArray(dir.subPhases) && dir.subPhases.length) {
-    const subs = dir.subPhases.slice(0, 5).map((s, i) => ({ ...s, agents: clampAgents(s.agents), depth: ph.depth + 1, id: `${ph.id}.${i + 1}` }))
-    queue.unshift(...subs) // insert NEXT — this is the self-propagation
-    evolution.push(`SUBDIVIDE ${ph.id} (score ${grade.score}) → ${subs.length} sub-phases [${subs.map((s) => s.id).join(', ')}]: ${dir.reason}`)
-    log(`evolve: subdivided ${ph.id} into ${subs.length} sub-phases (depth ${ph.depth + 1})`)
-  } else if (dir.decision === 'repair') {
+  // PM SELECT (opus, EVERY cycle): the PM is the goal-critic AND the arbiter. It reviews the Director's
+  // proposal and either adopts it, trims it, or overrides it — then owns the goalMet/vision call. This
+  // guarantees the PM fires after the Director on every phase (Ideate-style propose → select), instead of
+  // the Director unilaterally driving the plan with the PM only firing on productImpact/queue-drain.
+  let pm = { adopt: true, override: 'none', onVision: true, goalMet: false, residual: pmFinal.residual || [], reason: 'no PM (budget) — Director proposal stands' }
+  if (canSpawnWork()) {
+    spawned++
+    try {
+      const dirSummary =
+        `decision=${dir.decision}` +
+        (dir.decision === 'subdivide' ? ` (${(dir.subPhases || []).length} proposed sub-phases)` : '') +
+        (dir.decision === 'repair' ? ` (focus: ${dir.repairFocus || '—'})` : '') +
+        ` — ${dir.reason}`
+      pm =
+        (await agent(
+          `You are the PRODUCT MANAGER — the goal-critic AND the arbiter of the Director's call. The Director (engineering) just PROPOSED how the plan should react to the finished phase. YOU decide whether to adopt, trim, or override it, and whether the vision is met. Protect the charter: don't let the build over-repair or gold-plate, and don't under-invest where an acceptance criterion is still unmet.\n\n${charterBlock}\n\n` +
+            `PHASE [${ph.id}/${ph.kind}] (depth ${ph.depth}): ${ph.goal}\n` +
+            `GRADE: meetsGoal=${grade.meetsPhaseGoal}, score=${grade.score}, blockingIssues=${blocking.length}, workerMinSelfScore=${minScore}\n` +
+            `DIRECTOR PROPOSAL: ${dirSummary}\n` +
+            `WORK SO FAR (phase summaries):\n${artifacts.map((a) => `[${a.phase}/${a.kind}] ${a.summary}`).join('\n').slice(0, 2200)}\n` +
+            `FILES: ${[...new Set(artifacts.flatMap((a) => a.filesWritten || []))].slice(0, 50).join(', ')}\n` +
+            `REMAINING PLANNED PHASES: ${queue.map((q) => `${q.id}:${q.kind}`).join(', ') || '(none)'}\n\n` +
+            `Set adopt=true to take the Director's decision as-is. Set adopt=false and an override (pass/repair/subdivide) to change it, or keep the decision but use subPhasesKeep to trim the sub-phases. Set goalMet=true ONLY when every acceptanceCriterion is satisfied. Append revisePhases only for genuinely missing work.`,
+          { label: `pm:select:${ph.id}`, phase: evolveLabel, model: TIER.pm, schema: PM_SELECT_SCHEMA }
+        )) || pm
+      pmFinal = { onVision: pm.onVision, goalMet: pm.goalMet, residual: pm.residual || pmFinal.residual || [], reason: pm.reason }
+    } catch (e) {
+      /* keep the adopt=true fallback so the Director's proposal still applies */
+    }
+  }
+
+  // EFFECTIVE decision = the Director's proposal AS ARBITRATED by the PM.
+  const effective = pm.adopt === false && pm.override && pm.override !== 'none' ? pm.override : dir.decision
+  if (pm.adopt === false) evolution.push(`PM ${effective === dir.decision ? 'kept (trimmed)' : `overrode → ${effective}`} the Director on ${ph.id}: ${pm.reason}`)
+
+  // APPLY the arbitrated decision (bounded by depth + the literal counter)
+  if (effective === 'subdivide' && ph.depth < MAX_DEPTH && Array.isArray(dir.subPhases) && dir.subPhases.length) {
+    const keep = typeof pm.subPhasesKeep === 'number' && pm.subPhasesKeep >= 0 ? Math.min(pm.subPhasesKeep, dir.subPhases.length) : dir.subPhases.length
+    const subs = dir.subPhases.slice(0, Math.min(5, keep)).map((s, i) => ({ ...s, agents: clampAgents(s.agents), depth: ph.depth + 1, id: `${ph.id}.${i + 1}` }))
+    if (subs.length) {
+      queue.unshift(...subs) // insert NEXT — this is the self-propagation
+      evolution.push(`SUBDIVIDE ${ph.id} (score ${grade.score}) → ${subs.length} sub-phases [${subs.map((s) => s.id).join(', ')}]${pm.adopt === false ? ' (PM-trimmed)' : ''}: ${dir.reason}`)
+      log(`evolve: subdivided ${ph.id} into ${subs.length} sub-phases (depth ${ph.depth + 1})`)
+    } else {
+      evolution.push(`PASS ${ph.id} (${ph.kind}, score ${grade.score}) — PM trimmed all proposed sub-phases`)
+    }
+  } else if (effective === 'repair') {
     // repair is NOT depth-bounded like subdivide — give it its own per-phase cap so one failing phase can't repair-loop the whole MAX_PHASES budget
     const attempts = (ph.repairCount || 0) + 1
     if (attempts > MAX_REPAIRS) {
       evolution.push(`REPAIR-CAP ${ph.id}: max repairs (${MAX_REPAIRS}) reached — advancing with score ${grade.score}`)
       log(`evolve: ${ph.id} hit repair cap (${MAX_REPAIRS}), advancing`)
     } else if (canSpawnWork()) {
-      queue.unshift({ goal: ph.goal, kind: ph.kind, agents: ph.agents, depth: ph.depth, id: `${ph.id}r`, repairFocus: dir.repairFocus || 'fix the blocking issues', repairCount: attempts })
-      evolution.push(`REPAIR ${ph.id} (attempt ${attempts}, score ${grade.score}): ${dir.repairFocus || dir.reason}`)
+      const repairFocus = (pm.adopt === false && pm.repairFocus) || dir.repairFocus || 'fix the blocking issues'
+      queue.unshift({ goal: ph.goal, kind: ph.kind, agents: ph.agents, depth: ph.depth, id: `${ph.id}r`, repairFocus, repairCount: attempts })
+      evolution.push(`REPAIR ${ph.id} (attempt ${attempts}, score ${grade.score}): ${repairFocus}`)
     } else {
-      // a repair the director WANTED but the budget blocked — record it honestly, don't mislabel as PASS
-      evolution.push(`REPAIR-SKIPPED ${ph.id} (score ${grade.score}): cap reached — ${dir.repairFocus || dir.reason}`)
+      // a repair the overseers WANTED but the budget blocked — record it honestly, don't mislabel as PASS
+      evolution.push(`REPAIR-SKIPPED ${ph.id} (score ${grade.score}): cap reached`)
     }
   } else {
     evolution.push(`PASS ${ph.id} (${ph.kind}, score ${grade.score})`)
   }
 
-  // PM check (opus): only when the product changed materially, or queue is about to drain — bounds PM cost
-  const queueDraining = queue.length === 0
-  if ((dir.productImpact || queueDraining) && canSpawnWork()) {
-    spawned++
-    try {
-      const pm =
-        (await agent(
-          `You are the PRODUCT MANAGER. Check the build against the vision and acceptance criteria. Own the "what/why" — is it on-vision, and is it DONE? If the product needs new downstream phases to satisfy a criterion (or to correct drift), append them.\n\n${charterBlock}\n\n` +
-            `WORK SO FAR (phase summaries):\n${artifacts.map((a) => `[${a.phase}/${a.kind}] ${a.summary}`).join('\n').slice(0, 2500)}\n` +
-            `FILES: ${[...new Set(artifacts.flatMap((a) => a.filesWritten || []))].slice(0, 60).join(', ')}\n` +
-            `REMAINING PLANNED PHASES: ${queue.map((q) => `${q.id}:${q.kind}`).join(', ') || '(none)'}\n\n` +
-            `Return onVision, goalMet (all acceptanceCriteria satisfied), residual criteria, and any revisePhases to append.`,
-          { label: `pm:check`, phase: 'Evolve', model: TIER.pm, schema: PM_SCHEMA }
-        )) || pmFinal
-      pmFinal = pm
-      // goal-critic wins: if the PM declares all criteria met, stop — even if phases remain queued (they become phasesUnrun / gold-plating). Check BEFORE appending revisePhases so a goalMet+revise response can't swallow the stop signal.
-      if (pm.goalMet) {
-        evolution.push(`PM: goal MET — vision satisfied, stopping.`)
-        log(`evolve: PM declared goal met after ${phasesRun} phases`)
-        break
-      }
-      if (Array.isArray(pm.revisePhases) && pm.revisePhases.length && canSpawnWork()) {
-        // clamp the append to remaining phase headroom so the queue can't balloon past MAX_PHASES
-        const headroom = Math.max(0, MAX_PHASES - phasesRun - queue.length)
-        const adds = pm.revisePhases.slice(0, Math.min(5, headroom)).map((p, i) => ({ ...p, agents: clampAgents(p.agents), depth: 0, id: `R${seq + i + 1}` }))
-        seq += adds.length
-        if (adds.length) {
-          queue.push(...adds) // append downstream
-          evolution.push(`PM REVISE: appended ${adds.length} phase(s) [${adds.map((a) => a.id).join(', ')}]: ${pm.reason}`)
-          log(`evolve: PM appended ${adds.length} phase(s)`)
-        }
-      }
-      if (!pm.onVision) evolution.push(`PM: drift flagged — ${pm.reason}`)
-    } catch (e) {
-      /* keep prior pmFinal */
+  // PM goal-critic verdict (the PM already ran this cycle; honor its call).
+  // goal-critic wins: if every criterion is met, stop — even if phases remain queued (they become
+  // phasesUnrun / gold-plating). Checked BEFORE appending revisePhases so a goalMet+revise response
+  // can't swallow the stop signal.
+  if (pm.goalMet) {
+    evolution.push(`PM: goal MET — vision satisfied, stopping.`)
+    log(`evolve: PM declared goal met after ${phasesRun} phases`)
+    break
+  }
+  if (Array.isArray(pm.revisePhases) && pm.revisePhases.length && canSpawnWork()) {
+    // clamp the append to remaining phase headroom so the queue can't balloon past MAX_PHASES
+    const headroom = Math.max(0, MAX_PHASES - phasesRun - queue.length)
+    const adds = pm.revisePhases.slice(0, Math.min(5, headroom)).map((p, i) => ({ ...p, agents: clampAgents(p.agents), depth: 0, id: `R${seq + i + 1}` }))
+    seq += adds.length
+    if (adds.length) {
+      queue.push(...adds) // append downstream
+      evolution.push(`PM REVISE: appended ${adds.length} phase(s) [${adds.map((a) => a.id).join(', ')}]: ${pm.reason}`)
+      log(`evolve: PM appended ${adds.length} phase(s)`)
     }
   }
+  if (!pm.onVision) evolution.push(`PM: drift flagged — ${pm.reason}`)
 }
 if (phasesRun >= MAX_PHASES) evolution.push(`Stopped: hit maxPhases=${MAX_PHASES} backstop.`)
 if (!canSpawnWork() && queue.length) evolution.push(`Stopped: agent/budget cap with ${queue.length} planned phase(s) unrun.`)
