@@ -283,7 +283,11 @@ const verifyUnit = (reviewed, unit) => {
     for (const f of reviewed.findings) {
       const sev = RANK[f.severity]
       if (sev === undefined || sev > VERIFY_RANK || !canSpawnUnit() || mustReserve()) {
-        out.push({ ...f, unitId: unit.id, confirmed: true, note: sev > VERIFY_RANK ? 'below-verify-floor' : 'budget-skip-verify' })
+        // note: label each skip reason distinctly so callers can debug coverage accurately.
+        // sev===undefined means the schema returned an unrecognized severity string — pass-through confirmed
+        // so the finding is never silently dropped, but mark it for auditability.
+        const skipNote = sev === undefined ? 'unknown-severity-pass' : sev > VERIFY_RANK ? 'below-verify-floor' : 'budget-skip-verify'
+        out.push({ ...f, unitId: unit.id, confirmed: true, note: skipNote })
         continue
       }
       // severity-gated: CRITICAL/HIGH get 2 adversarial votes (one refuter is not enough to drop a serious

@@ -28,13 +28,16 @@ const UNIT_MODEL = A.model === 'haiku' || A.model === 'sonnet' ? A.model : 'sonn
 const PLAN_MODEL = A.planModel === 'sonnet' || A.planModel === 'haiku' ? A.planModel : 'opus'
 const ADVICE_MODEL = 'opus'
 const AUDIT_MODEL = 'opus'
-const MAX_AGENTS = Math.max(8, Math.min(950, typeof A.maxAgents === 'number' ? A.maxAgents : 150))
-const BATCH = Math.max(4, typeof A.batchSize === 'number' ? A.batchSize : 16)
-const FLOOR = typeof A.qualityFloor === 'number' ? A.qualityFloor : 60
-const MAX_ROUNDS = typeof A.maxRounds === 'number' ? A.maxRounds : 24
+// guard: typeof NaN === 'number' is true, so add isFinite checks to prevent NaN propagating into
+// MAX_AGENTS (NaN < NaN is false → can() always false → while loop never runs → silent empty result)
+const MAX_AGENTS = Math.max(8, Math.min(950, typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.floor(A.maxAgents) : 150))
+const BATCH = Math.max(4, typeof A.batchSize === 'number' && isFinite(A.batchSize) && A.batchSize > 0 ? Math.floor(A.batchSize) : 16)
+const FLOOR = typeof A.qualityFloor === 'number' && isFinite(A.qualityFloor) ? A.qualityFloor : 60
+const MAX_ROUNDS = typeof A.maxRounds === 'number' && isFinite(A.maxRounds) && A.maxRounds > 0 ? Math.floor(A.maxRounds) : 24
 const AUDIT_ON = A.audit !== false
 // a worker self-escalates to /advice when it flags needsAdvice OR rates its own draft below this confidence
-const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' ? A.adviceThreshold : 78
+// guard: NaN would silence escalation (draft.selfScore < NaN = false); add isFinite check
+const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' && isFinite(A.adviceThreshold) ? A.adviceThreshold : 78
 const DOMAIN = A.domain || A.task
 const gridA = Array.isArray(A.gridA) ? A.gridA : []
 const gridB = Array.isArray(A.gridB) ? A.gridB : []
@@ -154,7 +157,7 @@ const slim = (c) => ({ id: c.id, title: c.title, category: c.category, html: c.h
 const built = []
 const byId = new Map()
 const covered = new Set(Array.isArray(A.coveredSeed) ? A.coveredSeed : [])
-const priorTotal = typeof A.priorTotal === 'number' ? A.priorTotal : 0
+const priorTotal = typeof A.priorTotal === 'number' && Number.isFinite(A.priorTotal) && A.priorTotal >= 0 ? Math.floor(A.priorTotal) : 0
 const systemic = []
 const allScores = []
 let goalResidual = []
@@ -294,9 +297,12 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
     }
     if (need !== Infinity) roundCap = Math.min(BATCH, Math.max(1, need))
   }
-  roundCap = Math.min(roundCap, Math.max(0, MAX_AGENTS - RESERVE - spawned))
+  // Account for the plan agent (+1) that will be spawned at the top of the round body so the
+  // available build slot count is correct — prevents a "dry round" where plan runs but no build
+  // unit passes canBuild() because the plan itself exhausted the pre-reserve budget.
+  roundCap = Math.min(roundCap, Math.max(0, MAX_AGENTS - RESERVE - spawned - 1 /* plan */))
   if (roundCap < 1) {
-    log(`round ${round}: no build budget left (reserving for audit/goal-check); stopping`)
+    log(`round ${round}: no build budget left (reserving for plan/audit/goal-check); stopping`)
     break
   }
 
@@ -354,7 +360,7 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
     phase(`Round ${round} · Audit`)
     const verdicts = await auditRound(roundComps, round)
     verdicts.forEach((v) => {
-      if (v && typeof v.score === 'number') allScores.push(v.score)
+      if (v && typeof v.score === 'number' && Number.isFinite(v.score)) allScores.push(v.score)
     })
     const flaggedIds = new Set(verdicts.filter((v) => v && v.ok === false).map((v) => v.id))
     const issueOf = new Map(verdicts.map((v) => [v.id, v.issue || 'low quality']))

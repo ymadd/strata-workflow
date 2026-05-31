@@ -78,7 +78,7 @@ Invoke the skill and, optionally, lead with a token budget that derives all the 
 ```
 
 - The leading `300k` (or `120k`, `1m`, …) is read as the **token cap**; default is `150k`.
-- From it Strata derives `MAX_AGENTS = clamp(floor(0.8 * cap / 12k), 4, 40)` for focus/scale/panel (grow takes an explicit `maxAgents`).
+- From it Strata derives `MAX_AGENTS = clamp(floor(0.8 * cap / 12k), 4, 40)` for focus/review/panel (sweep/ultra/evolve use a ≤120 roof; grow takes an explicit `maxAgents`; scale uses `HARD_LIMIT=950` unit-list truncation).
 - The token cap is *approximate*; the **agent-count counter is the hard guarantee**.
 
 The skill picks a mode via a deliberate gate (default: do the least — solo, or a small fan-out only when breadth-of-evidence justifies it), then calls the matching workflow. See [`SKILL.md`](./skills/strata-workflow/SKILL.md) for the full model-facing specification, the gate, the per-mode call signatures, and the Goal-alignment flow used by `grow`.

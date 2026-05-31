@@ -201,6 +201,9 @@ try {
     `Task: ${A.task}\n\nConfirmed findings (after adversarial verification):\n${JSON.stringify(confirmed, null, 2)}\n\nProduce the final, correct answer/roadmap. You MAY read 2-3 key files to ground the synthesis. Explicitly note any coverage gaps caused by the agent budget.`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
+  // agent() can resolve to null without throwing — route that into the fail-open below
+  // (consistent with review/panel/sweep/ultra which all guard against synthesis null)
+  if (!synthesis) throw new Error('synthesis agent returned null')
 } catch (e) {
   synthesis = {
     answer:

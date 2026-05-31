@@ -39,7 +39,7 @@ Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; r
 Pick exactly one. **Default is SOLO.**
 - **SOLO (no workflow):** conversational turn / a single file you've already located / a <~30-line mechanical change / answerable from current context. → **If you can name the files up front, you don't need a workflow.**
 - **SMALL FAN-OUT (2–4 haiku agents inline, no template, no judge panel):** a handful of independent, bounded lookups.
-- **A MODE (call one of the workflows):** when the task matches a mode above AND the breadth/structure justifies the fan-out — focus/review/sweep/panel/scale/grow/ultra.
+- **A MODE (call one of the workflows):** when the task matches a mode above AND the breadth/structure justifies the fan-out — focus/review/sweep/panel/scale/grow/ultra/evolve.
 
 **When unsure, go SOLO.** This is the deliberate inversion of ultracode's "workflow on every substantive task" — breadth-of-evidence is the trigger, not "substantiveness."
 
@@ -51,7 +51,7 @@ Pick exactly one. **Default is SOLO.**
 4. **Resolve the workflow path.** Scripts live in this skill's own `workflows/` directory; references in `reference/`. Paths use **`${CLAUDE_SKILL_DIR}/...`** — the portable reference to this skill's install dir, which resolves whether Strata is a **standalone skill** (`~/.claude/skills/strata-workflow/` or a project's `.claude/skills/`) or **bundled in a plugin** (the plugin cache). The Workflow tool needs an **absolute** path: if `${CLAUDE_SKILL_DIR}` is already expanded in your context, use it as-is; otherwise resolve it to the absolute directory this SKILL.md was loaded from. Nothing is machine-specific — the workflow JS carries its own guards and runtime notes in code comments, so no external memory or config is required.
 
 ## What the code guarantees (the binding lives here, not in prose)
-- **Primary guard = a literal agent counter** (needs no API, cannot fail): `MAX_AGENTS = clamp(floor(0.8*cap / 12k), 4, 40)` for focus/review/scale (sweep/evolve roof ≤120); an explicit `maxAgents` (≤950) for grow/ultra/evolve. Checked before every `agent()`. evolve additionally bounds `maxPhases` + subdivision `maxDepth`.
+- **Primary guard = a literal agent counter** (needs no API, cannot fail): `MAX_AGENTS = clamp(floor(0.8*cap / 12k), 4, 40)` for focus/review/panel (sweep/ultra/evolve roof ≤120); scale uses `HARD_LIMIT=950` unit-list truncation (no clamp formula); an explicit `maxAgents` (≤950) for grow/ultra/evolve. Checked before every `agent()`. evolve additionally bounds `maxPhases` + subdivision `maxDepth`.
 - **Model tiering:** a role→model map applied to every `agent()`; opus is never the per-unit model at scale.
 - **Severity-gated verification:** CRITICAL/HIGH = 2 votes, else 1 (no flat 3–5 panel). Cross-dimension findings are deduped before verify (review/sweep) so overlapping flags don't each burn an agent.
 - **Budget is a secondary, best-effort guard:** `budget.spent()` is the shared cumulative pool, so it's read relative to a start baseline and wrapped in try/catch — if the API is inert, the counter still bounds spend.
@@ -69,10 +69,11 @@ Pick exactly one. **Default is SOLO.**
 ceil       = <cap arg> ?? budget.total ?? 150000   (min if both)
 SOFT       = 0.8 * ceil
 RESERVE    = min(40k, 0.2*ceil)
-MAX_AGENTS = clamp(floor(SOFT / 12k), 4, 40)        (focus/review/scale; sweep/evolve roof ≤120; grow/ultra/evolve take maxAgents ≤950)
-finders    = min(8, ceil(MAX_AGENTS * 0.4))
+MAX_AGENTS = clamp(floor(SOFT / 12k), 4, 40)        (focus/review/panel; sweep/ultra/evolve roof ≤120; grow/ultra/evolve take explicit maxAgents ≤950)
+                                                     scale: HARD_LIMIT=950 unit-list truncation (no clamp formula; COUNT is the primary knob)
+finders    = min(8, max(2, ceil(MAX_AGENTS * 0.4)))
 ```
-e.g. 120k→8 / 150k→10 / 300k→20 / 1m→40. Model tiering is always on regardless of cap; a bigger cap buys more agents, never a bigger per-agent model. The token cap is approximate — the **agent count** is the hard guarantee.
+e.g. 120k→8 / 150k→10 / 300k→20 / 1m→40. Model tiering is always on regardless of cap; a bigger cap buys more agents, never a bigger per-agent model. The token cap is approximate — the **agent count** is the hard guarantee. Per-mode ceiling constants (traced to code) are in `reference/scale.md`.
 
 ## Relationship to ultracode / your global rules
 - This skill layers on `/effort`; it cannot toggle the effort level.

@@ -27,9 +27,18 @@ if (!A.batchDir || typeof A.count !== 'number' || !isFinite(A.count) || A.count 
   }
 }
 
-const BATCH = typeof A.batchSize === 'number' && A.batchSize > 0 ? A.batchSize : 20
+// guard: isFinite prevents A.batchSize=Infinity → BATCH=Infinity → nBatchesRaw=0 → silent empty run
+const BATCH = typeof A.batchSize === 'number' && isFinite(A.batchSize) && A.batchSize > 0 ? Math.floor(A.batchSize) : 20
 const AUDIT_MODEL = A.model === 'sonnet' || A.model === 'haiku' ? A.model : 'opus'
-const nBatches = Math.ceil(A.count / BATCH)
+// ---- literal agent-count cap: harness hard limit is 1000; keep 1 slot for the critic ----
+const HARD_LIMIT = 950
+const nBatchesRaw = Math.ceil(A.count / BATCH)
+const nBatches = Math.min(nBatchesRaw, HARD_LIMIT - 1)  // reserve 1 slot for the critic agent
+if (nBatchesRaw > nBatches) {
+  log(`mass-audit: ${nBatchesRaw} batches exceeds ${HARD_LIMIT - 1}; truncating to ${nBatches} (covers ${nBatches * BATCH} of ${A.count} units).`)
+}
+let spawned = 0
+const canSpawn = () => spawned < HARD_LIMIT
 const pad = (n) => (n < 10 ? '0' : '') + n
 
 const ITEM = {
@@ -57,8 +66,10 @@ log(`mass-audit: ${A.count} units in ${nBatches} batches of ${BATCH} on ${AUDIT_
 // ---- AUDIT: one agent per batch; each reads only its own small batch file ----
 phase('Audit')
 const batchIdx = Array.from({ length: nBatches }, (_, i) => i)
-const audited = await pipeline(batchIdx, (i) =>
-  agent(
+const audited = await pipeline(batchIdx, (i) => {
+  if (!canSpawn()) return null
+  spawned++
+  return agent(
     `Read the file ${A.batchDir}/batch-${pad(i)}.json — a JSON array of UI components, each {id,title,category,html,css,js}. Audit EACH component:
 - Would it actually RENDER and VISIBLY ANIMATE (on load/hover/click/loop)?
 - Is ALL its CSS scoped under one unique wrapper class (no global/leaking selectors)?
@@ -69,16 +80,18 @@ Grade quality 0-100 (polish, distinctiveness, correctness).${A.task ? ' Task con
 Return one verdict per component: {id, score, ok (score>=60 AND not broken), broken, dup, issue}.`,
     { label: `audit:${pad(i)}`, phase: 'Audit', model: AUDIT_MODEL, schema: BATCH_SCHEMA }
   )
-)
+})
 const perItem = audited.filter(Boolean).flatMap((b) => (b && b.verdicts ? b.verdicts : []))
 
 const broken = perItem.filter((v) => v.broken || v.score < 60)
 const dups = perItem.filter((v) => v.dup)
-const scores = perItem.map((v) => v.score).filter((n) => typeof n === 'number')
+const scores = perItem.map((v) => v.score).filter((n) => typeof n === 'number' && Number.isFinite(n))
 const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
 log(`audit: ${perItem.length} graded, avg ${avg}/100, ${broken.length} low/broken, ${dups.length} dup`)
 
 // ---- CRITIC: one opus meta-critic over the flagged set → systemic issues + regenerate list ----
+// The 1-slot critic reserve (nBatches <= HARD_LIMIT - 1) ensures canSpawn() is true here unless
+// the batch pipeline itself consumed the last slot due to a race — in which case we degrade gracefully.
 phase('Critic')
 const CRITIC_SCHEMA = {
   type: 'object',
@@ -91,12 +104,12 @@ const CRITIC_SCHEMA = {
     regenerateIds: { type: 'array', items: { type: 'string' } },
   },
 }
-const critic = await agent(
+const critic = canSpawn() ? (spawned++, await agent(
   `You are the lead QA critic over a batch of ${A.count} generated UI components (avg quality ${avg}/100; ${broken.length} flagged broken/low <60; ${dups.length} flagged duplicate). Flagged verdicts (JSON): ${JSON.stringify(
     [...broken, ...dups].slice(0, 140)
   )}. Identify SYSTEMIC issues (patterns across many units — e.g. a whole visual style or component-type that consistently fails or looks identical), give an overall letter grade with one sentence, name the worst categories, and produce regenerateIds = the ids worth regenerating (broken/low + clear dups; cap ~80, prioritise the worst).`,
   { label: 'critic', phase: 'Critic', model: 'opus', schema: CRITIC_SCHEMA }
-)
+)) : null
 
 return {
   count: A.count,

@@ -36,7 +36,8 @@ const TOKENS_PER_AGENT = 16_000
 const AGENT_FLOOR = 8
 const AGENT_ROOF = 120
 const HARD_LIMIT = 950 // runtime lifetime-agent backstop
-const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' ? A.adviceThreshold : 78
+// guard: typeof NaN === 'number' is true; NaN would silence the escalation (b.selfScore < NaN = false)
+const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' && isFinite(A.adviceThreshold) ? A.adviceThreshold : 78
 
 // ---- model tiers: opus is spawned ONLY where judgment is needed (judge, advice, tie-break, critic, synth) ----
 const TIER = { scout: 'haiku', design: 'sonnet', judge: 'opus', build: 'sonnet', advise: 'opus', review: 'sonnet', verify: 'sonnet', tiebreak: 'opus', repair: 'sonnet', critic: 'opus', synth: 'opus' }
@@ -97,9 +98,12 @@ const gate = (ceil) => spawned < Math.min(ceil, MAX_AGENTS) && !overBudget()
 // rest of the global budget up to MAX_AGENTS, minus the synth reserve. This is where agents grow on demand.
 const canSpawnDyn = () => spawned < MAX_AGENTS - SYNTH_RESERVE && !overBudget()
 
-const dryStreakLimit = typeof A.dryStreakLimit === 'number' ? A.dryStreakLimit : 2
-const maxReviewRounds = typeof A.maxReviewRounds === 'number' ? A.maxReviewRounds : UNLEASHED ? 8 : 4
-const maxImprovementRounds = typeof A.maxImprovementRounds === 'number' ? A.maxImprovementRounds : UNLEASHED ? 6 : 2
+// guard: typeof NaN === 'number' is true; without isFinite(), NaN propagates into loop bounds causing
+// `round < NaN` or `dry < NaN` → always false → loop body never runs (or dry streak never terminates).
+// Add isFinite() + positive-integer clamp to match the guard pattern used by strata-grow.js.
+const dryStreakLimit = typeof A.dryStreakLimit === 'number' && isFinite(A.dryStreakLimit) && A.dryStreakLimit > 0 ? Math.floor(A.dryStreakLimit) : 2
+const maxReviewRounds = typeof A.maxReviewRounds === 'number' && isFinite(A.maxReviewRounds) && A.maxReviewRounds > 0 ? Math.floor(A.maxReviewRounds) : UNLEASHED ? 8 : 4
+const maxImprovementRounds = typeof A.maxImprovementRounds === 'number' && isFinite(A.maxImprovementRounds) && A.maxImprovementRounds > 0 ? Math.floor(A.maxImprovementRounds) : UNLEASHED ? 6 : 2
 
 if (UNLEASHED)
   log(
