@@ -301,9 +301,10 @@ if (approaches.length === 1) {
       )}\n\nPick the winner that best fits the task and constraints. Name ideas from the losers worth grafting into the build.`,
     { label: 'design:judge', phase: 'Design', model: TIER.judge, schema: JUDGE_SCHEMA }
   )
-  const widx = approaches.some((a) => a.index === verdict.winnerIndex) ? verdict.winnerIndex : approaches[0].index
+  // agent() can resolve to null without throwing — fall back to the first approach instead of dereferencing null
+  const widx = verdict && approaches.some((a) => a.index === verdict.winnerIndex) ? verdict.winnerIndex : approaches[0].index
   winner = approaches.find((a) => a.index === widx)
-  graft = verdict.graft || []
+  graft = (verdict && verdict.graft) || []
 } else {
   winner = approaches[0]
 }
@@ -403,7 +404,12 @@ const reviewUntilDry = async () => {
           })
         )
       ).filter(Boolean)
-      if (!ballots.length) continue
+      // Fail OPEN on a missing OR partial ballot: a budget-truncated verify must not silently DROP a
+      // possibly-real issue. Confirm it for repair (the repair loop's own gate skips work if budget is out).
+      if (ballots.length < votes) {
+        confirmed.push(it)
+        continue
+      }
       const real = ballots.filter((v) => v.isReal).length
       let isReal
       // DYNAMIC ESCALATION #2 — verifiers split on a high-severity issue → spawn an opus tie-breaker.
@@ -456,7 +462,8 @@ while (true) {
       `You are a completeness critic. Does this FULLY satisfy the task? If not, return complete=false and list the missing pieces as concrete new work units (id + instruction). Be exacting — only call it complete when it truly is.`,
     { label: `completeness#${improvementRounds}`, phase: 'Review', model: TIER.critic, schema: CRITIC_SCHEMA }
   )
-  if (critic.complete || !(critic.gaps && critic.gaps.length)) break
+  // agent() can resolve to null without throwing — stop the loop instead of dereferencing critic.complete
+  if (!critic || critic.complete || !(critic.gaps && critic.gaps.length)) break
   // DYNAMIC ESCALATION #3 — build the gap units the critic identified
   let added = 0
   for (const g of critic.gaps) {
@@ -483,6 +490,7 @@ try {
       `Assemble the final deliverable for the task. Be a completeness critic: state what is fully done vs still missing, and note any gaps the agent budget forced.`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
+  if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open
 } catch (e) {
   synthesis = {
     deliverable: 'Budget ceiling reached before synthesis. Returning built artifacts as the partial result.',

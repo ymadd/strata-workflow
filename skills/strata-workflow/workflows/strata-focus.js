@@ -171,7 +171,7 @@ for (const it of items) {
   const votes = it.severity === 'CRITICAL' || it.severity === 'HIGH' ? 2 : 1
   const thunks = []
   for (let v = 0; v < votes; v++) {
-    if (!canSpawn()) break
+    if (!canSpawn() || mustReserve()) break // recheck the reserve per vote, not just at the block start
     spawned++
     thunks.push(() =>
       agent(
@@ -181,13 +181,14 @@ for (const it of items) {
     )
   }
   const ballots = (await parallel(thunks)).filter(Boolean)
-  if (ballots.length === 0) {
-    // D2: votes were budget-skipped — fail open but mark provenance so it's not mistaken for "verified"
-    verified.push({ ...it, confirmed: true, note: 'budget-skip-verify' })
+  // Fail OPEN on a missing OR partial ballot: a budget-truncated vote must not let a lone adversarial
+  // ballot reject a finding the 2-vote rule exists to protect. Quorum is against the INTENDED vote count.
+  if (ballots.length < votes) {
+    verified.push({ ...it, confirmed: true, note: ballots.length === 0 ? 'budget-skip-verify' : 'budget-partial-verify' })
     continue
   }
   const real = ballots.filter((r) => r.isReal).length
-  verified.push({ ...it, confirmed: real >= Math.ceil(ballots.length / 2) })
+  verified.push({ ...it, confirmed: real >= Math.ceil(votes / 2) })
 }
 
 // ---- Phase 3: SYNTHESIZE — the ONE opus stage, on the fenced reserve, guarded against a budget throw ----

@@ -19,14 +19,17 @@ Fan-out is powerful but easy to overdo: a panel of opus agents on every task bur
 
 | Mode | Script | Use it when | Opus is used for |
 |------|--------|-------------|------------------|
-| **focus** | `strata-focus.js` | The search surface is unknown and you need cross-source synthesis (review / research / debug). | synthesis only |
+| **focus** | `strata-focus.js` | The search surface is unknown and you need cross-source synthesis (research / debug / scoping). | synthesis only |
+| **review** | `strata-review.js` | You have a KNOWN change (git diff / PR / paths) and want a graded review — dimension reviewers → dedup → adversarial refute → verdict (approve / comment / request-changes). | the verdict only |
+| **sweep** | `strata-sweep.js` | You want to audit the WHOLE codebase — map into risk-ranked units → pipelined per-unit review+verify → cross-codebase dedup → systemic/architectural critic → health grade with an honest coverage note. | systemic critic + synthesis |
 | **panel** | `strata-panel.js` | ONE problem with many valid approaches — you want to *choose* the best design (architecture, API design, library selection, art direction). | advise + judge + synthesize |
 | **scale** | `strata-scale.js` | A known work-list of N independent units (e.g. generate 500 components, transform N files). | advise pre-pass + audit |
 | **grow** | `strata-grow.js` | A self-improving generation loop that grows toward a cap or a goal, auto-generating rounds (Plan → Build → Audit → Repair). | plan + advise + audit |
 | **ultra** | `strata-ultra.js` | ONE substantial task taken end-to-end: understand → design → build → review → synthesize. ultracode's full arc that *dynamically* spawns agents where needed (opus advice / tie-breaks / completeness-grown units). Capped, or `unleashed`. | judge + advice + tie-break + critic + synthesize |
+| **evolve** | `strata-evolve.js` | Autonomous, self-propagating development toward a vision: a **PM** (opus) owns the goal + ideation, a **Director** (opus) grows an EMERGENT phase plan and SUBDIVIDES important phases (spawning more agents) until the PM judges it done. Writes real files. | PM + Director + ideation + synthesize |
 | _audit_ | `strata-audit.js` | A thin opus oversight layer that grades a large generated batch and returns systemic issues + a regenerate list. | grading + meta-critique |
 
-**Shared DNA:** focus = few done smartly · panel = many proposed, one chosen · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped. `panel` *decides*; `scale`/`grow` *build*; `ultra` *does the whole arc*. `focus` does the least, `ultra` does the most the cap allows.
+**Shared DNA:** focus = few done smartly · review = one change scrutinized to a verdict · sweep = the whole codebase reviewed at scale · panel = many proposed, one chosen · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped · evolve = an autonomous build that grows its own phase plan. `panel` *decides*; `scale`/`grow` *build*; `review` *judges a change*; `sweep` *audits the codebase*; `ultra`/`evolve` *do the most the cap allows* (ultra on a fixed arc, evolve on an emergent one). `focus` does the least. (focus vs review: *unknown surface, cheap haiku exploration* vs *known change, deep sonnet scrutiny + dedup + verdict*.)
 
 ## Model tiering
 
@@ -96,19 +99,25 @@ strata-workflow/                    # repo root — also its own plugin + market
 │   └── marketplace.json            # marketplace listing (single-plugin)
 ├── skills/
 │   └── strata-workflow/
-│       ├── SKILL.md                # the model-facing skill spec (modes, gate, call signatures)
+│       ├── SKILL.md                # lean router: the gate, cap math, tiering rules (small, always-loaded)
+│       ├── reference/              # per-mode call signatures — read on demand, not into context
+│       │   ├── focus.md   review.md   sweep.md    panel.md
+│       │   ├── scale.md   grow.md     ultra.md    evolve.md
 │       └── workflows/
 │           ├── strata-focus.js     # find → verify → synthesize
+│           ├── strata-review.js    # code review of a change: dimension reviewers → dedup → refute → verdict
+│           ├── strata-sweep.js     # codebase-wide review: map → risk-ranked units → systemic critic → grade
 │           ├── strata-panel.js     # design tournament: diverge → judge → synthesize
 │           ├── strata-scale.js     # advise → build (×N) → audit → repair
 │           ├── strata-grow.js      # self-improving / goal-driven progressive loop
 │           ├── strata-ultra.js     # full task arc: understand → design → build → review → synthesize
+│           ├── strata-evolve.js    # autonomous self-propagating dev: PM + Director grow an emergent phase plan
 │           └── strata-audit.js     # opus oversight: grade a batch, return systemic issues
 ├── README.md                       # this file
 └── LICENSE
 ```
 
-The workflow scripts are plain JavaScript executed by Claude Code's Workflow runtime (no Node.js APIs; top-level `await`/`return` allowed). Each is self-contained and can be invoked directly via `Workflow({ scriptPath, args })`; SKILL.md references them via `${CLAUDE_SKILL_DIR}/workflows/<name>.js` so the path resolves in both plugin and standalone installs.
+The workflow scripts are plain JavaScript executed by Claude Code's Workflow runtime (no Node.js APIs; top-level `await`/`return` allowed). Each is self-contained and can be invoked directly via `Workflow({ scriptPath, args })`. **Progressive disclosure:** SKILL.md stays a small, always-loaded router; each mode's full call signature lives in `reference/<mode>.md` and is read only when that mode runs — so adding modes doesn't grow per-activation context. Both SKILL.md and the references point at scripts via `${CLAUDE_SKILL_DIR}/...` so paths resolve in both plugin and standalone installs.
 
 ## Built on dynamic Workflows + ultracode
 

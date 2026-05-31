@@ -28,7 +28,9 @@ function buildUnits() {
     for (const a of A.gridA) for (const b of A.gridB) out.push({ a, b })
     return out
   }
-  const n = typeof A.count === 'number' ? A.count : 0
+  // guard against non-finite / negative count: Infinity here would loop forever and OOM before the
+  // later HARD_LIMIT truncation could ever run, so clamp to a finite, bounded integer up front.
+  const n = typeof A.count === 'number' && isFinite(A.count) && A.count > 0 ? Math.min(Math.floor(A.count), 950) : 0
   const out = []
   for (let i = 0; i < n; i++) out.push({ index: i })
   return out

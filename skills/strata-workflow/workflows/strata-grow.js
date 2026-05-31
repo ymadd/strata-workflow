@@ -58,10 +58,19 @@ const spentNow = () => {
   }
 }
 const startSpent = spentNow()
-const can = () => spawned < MAX_AGENTS
+// best-effort budget guard: only fires when a HARD `+Ntokens` budget.total is actually exhausted
+// (remaining() is Infinity otherwise, so the agent COUNT stays the primary bound by design).
+const overBudget = () => {
+  try {
+    return budget.remaining() <= 0
+  } catch (e) {
+    return false
+  }
+}
+const can = () => spawned < MAX_AGENTS && !overBudget()
 // reserve headroom each round so AUDIT + GOAL-CHECK always get to run (build/plan/repair stop earlier)
 const RESERVE = Math.min(12, Math.max(4, Math.ceil(MAX_AGENTS * 0.15)))
-const canBuild = () => spawned < Math.max(1, MAX_AGENTS - RESERVE)
+const canBuild = () => spawned < Math.max(1, MAX_AGENTS - RESERVE) && !overBudget()
 
 // ---- schemas ----
 const COMP_FIELDS = {
@@ -239,8 +248,9 @@ async function goalCheck(round) {
   const programmaticOk = programmaticDone(st)
   let criticMet = false
   let residual = []
-  if (spawned < 996) {
-    // goal-check is essential and cheap (1 opus) — run it regardless of the soft build cap
+  if (can()) {
+    // goal-check is essential and cheap (1 opus) — it runs from the reserved headroom (canBuild stops
+    // earlier than can() by RESERVE), but it still honors MAX_AGENTS instead of a hardcoded ceiling.
     spawned++
     const critic = await agent(
       `GOAL: ${GOAL.objective}\nDONE-CRITERIA (qualitative): ${
@@ -267,6 +277,9 @@ log(
 let round = 0
 let dryStreak = 0
 let done = false
+// fail open: a mid-loop throw (e.g. a hard budget.total ceiling hit inside an awaited agent()) must not
+// discard everything built so far — break out and return the accumulated units as a partial result.
+try {
 while (can() && round < MAX_ROUNDS && dryStreak < 2) {
   round++
 
@@ -318,8 +331,17 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
 
   // --- BUILD (with self-escalation /advice) ---
   phase(`Round ${round} · Build`)
-  const roundComps = (await parallel(specs.map((s) => () => buildUnit(s, round)))).filter(Boolean)
-  specs.forEach((s) => covered.add(cellKey(s)))
+  // mark a cell covered ONLY when its unit actually built — a budget-skipped (null) spec stays uncovered
+  // so a later round / checkpoint can still pick it up (no optimistic over-counting / silent loss).
+  const roundComps = (
+    await parallel(
+      specs.map((s) => async () => {
+        const c = await buildUnit(s, round)
+        if (c) covered.add(cellKey(s))
+        return c
+      })
+    )
+  ).filter(Boolean)
   for (const c of roundComps) {
     if (!c.id) continue
     if (byId.has(c.id)) c.id = c.id + '-r' + round
@@ -378,6 +400,9 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
 
   log(`round ${round} done: +${roundComps.length} (total ${priorTotal + built.length}), advised ${advised}, agents ${spawned}/${MAX_AGENTS}, ~${Math.max(0, spentNow() - startSpent)} tok`)
   if (done) break
+}
+} catch (e) {
+  log(`strata-grow: stopped early on error — ${String(e && e.message ? e.message : e)}; returning ${built.length} unit(s) built so far`)
 }
 
 const finalStats = currentStats()

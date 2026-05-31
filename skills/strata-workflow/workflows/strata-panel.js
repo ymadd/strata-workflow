@@ -253,6 +253,7 @@ try {
       `Be discriminating — do not award everyone similar scores. In your rationale, name the runner-up ideas that the winner should absorb.`,
     { label: 'judge', phase: 'Judge', model: TIER.judge, schema: JUDGE_SCHEMA }
   )
+  if (!verdict) throw new Error('judge agent returned null') // route a non-throwing null into the fail-open below
 } catch (e) {
   // fail open: pick by self-reported richness so the run still yields a result
   const fallback = contenders[0]
@@ -285,6 +286,7 @@ try {
       `Do not blandly merge everything — keep the winner's coherence and only graft ideas that strengthen it. Record what you grafted and from where.`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
+  if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open below
 } catch (e) {
   synthesis = {
     finalDesign: winner.approach,

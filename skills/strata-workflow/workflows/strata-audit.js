@@ -19,10 +19,11 @@ const A = (() => {
   }
   return args && typeof args === 'object' ? args : {}
 })()
-if (!A.batchDir || typeof A.count !== 'number') {
+if (!A.batchDir || typeof A.count !== 'number' || !isFinite(A.count) || A.count <= 0) {
+  // reject non-finite/zero count: Math.ceil(Infinity/BATCH) -> Infinity -> Array.from({length:Infinity}) RangeError
   return {
     error:
-      'mass-audit needs args.batchDir (a dir of batch-NN.json files) and args.count (total units). Optional: batchSize=20, model=opus, task.',
+      'mass-audit needs args.batchDir (a dir of batch-NN.json files) and args.count (a finite positive integer of total units). Optional: batchSize=20, model=opus, task.',
   }
 }
 
