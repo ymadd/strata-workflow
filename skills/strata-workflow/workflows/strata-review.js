@@ -63,7 +63,13 @@ const candidates = [A.cap, hardTotal()].filter((n) => typeof n === 'number' && n
 const CEIL = candidates.length ? Math.min(...candidates) : DEFAULT_CAP
 const SOFT = Math.floor(CEIL * 0.8)
 const RESERVE = Math.min(40_000, Math.floor(CEIL * 0.2))
-const MAX_AGENTS = Math.max(AGENT_FLOOR, Math.min(AGENT_ROOF, Math.floor(SOFT / TOKENS_PER_AGENT)))
+// An explicit agent-count cap (a leading bare number like `100`) overrides the token-derived clamp and
+// may exceed the soft AGENT_ROOF — bounded only by [AGENT_FLOOR, HARD_LIMIT] so the literal counter stays honest.
+const HARD_LIMIT = 950
+const explicitMax = typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.floor(A.maxAgents) : null
+const MAX_AGENTS = explicitMax != null
+  ? Math.max(AGENT_FLOOR, Math.min(HARD_LIMIT, explicitMax))
+  : Math.max(AGENT_FLOOR, Math.min(AGENT_ROOF, Math.floor(SOFT / TOKENS_PER_AGENT)))
 const FINDERS = Math.min(8, Math.max(2, Math.ceil(MAX_AGENTS * 0.4)))
 
 // ---- the PRIMARY guard is a literal counter (needs no API, cannot fail) ----
@@ -92,7 +98,7 @@ if (A.diff) {
 const TARGET_NOTE = A.target ? `\nWhat this change is meant to do (reviewer context): ${A.target}\n` : ''
 
 log(
-  `Strata/strata-review: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}, ` +
+  `Strata/strata-review: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, ` +
     `finders=${FINDERS}, floor=${SEVERITY_FLOOR}, fix=${WANT_FIX}, ` +
     `tiers review=${TIER.review} verify=${TIER.verify} synth=${TIER.synth}`
 )

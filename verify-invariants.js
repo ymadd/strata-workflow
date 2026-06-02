@@ -424,8 +424,10 @@ if (growSrc) {
     // The dual-gate pattern: `overCap() || spawned >= HARD_LIMIT` (or equivalent ordering) must
     // appear in the pipeline callback — not necessarily on one line, but both tokens present
     // in a gate position (within the pipeline's `(unit,...) => { if (...) return null }` block).
-    const hasDualGate = /overCap\(\)\s*\|\|\s*spawned\s*>=\s*HARD_LIMIT/.test(scaleSrc) ||
-                        /spawned\s*>=\s*HARD_LIMIT\s*\|\|\s*overCap\(\)/.test(scaleSrc)
+    // The counter backstop's ceiling may be HARD_LIMIT or an effective ceiling
+    // (`explicitMax != null ? explicitMax : HARD_LIMIT`) when an explicit agent cap is honored.
+    const hasDualGate = /overCap\(\)\s*\|\|\s*spawned\s*>=\s*\(?[^)]*HARD_LIMIT/.test(scaleSrc) ||
+                        /spawned\s*>=\s*\(?[^)]*HARD_LIMIT[^)]*\)?\s*\|\|\s*overCap\(\)/.test(scaleSrc)
     if (hasDualGate) {
       pass('cap:strata-scale.js:dual-gate', 'pipeline has dual gate: overCap() (token throttle) AND spawned>=HARD_LIMIT (counter backstop)')
     } else {

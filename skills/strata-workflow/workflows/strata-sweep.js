@@ -67,7 +67,12 @@ const RESERVE = Math.min(50_000, Math.floor(CEIL * 0.2))
 const DERIVED = Math.max(AGENT_FLOOR, Math.min(AGENT_ROOF, Math.floor(SOFT / TOKENS_PER_AGENT)))
 // MAX_AGENTS is the hard TOTAL agent ceiling (map + reviews + verifies + systemic + synth).
 const explicitUnits = typeof A.maxUnits === 'number' && A.maxUnits > 0 ? Math.min(A.maxUnits, HARD_LIMIT) : null
-const MAX_AGENTS = Math.min(HARD_LIMIT, explicitUnits ? Math.max(AGENT_FLOOR, explicitUnits + 4) : DERIVED)
+// An explicit agent-count cap (a leading bare number like `100`) overrides the token-derived total and may
+// exceed the soft AGENT_ROOF — bounded only by [AGENT_FLOOR, HARD_LIMIT]. maxUnits (review breadth) still applies under it.
+const explicitMax = typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.min(Math.floor(A.maxAgents), HARD_LIMIT) : null
+const MAX_AGENTS = explicitMax != null
+  ? Math.max(AGENT_FLOOR, explicitMax)
+  : Math.min(HARD_LIMIT, explicitUnits ? Math.max(AGENT_FLOOR, explicitUnits + 4) : DERIVED)
 // Reserve the last 2 slots for the always-run systemic + synth stages.
 const SYNTH_RESERVE = 2
 // How many review units we'll actually deep-review: the riskiest first, within the counter.
@@ -106,7 +111,7 @@ const DIMS = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions :
 const DIM_LINE = DIMS.map((d) => `- ${d}`).join('\n')
 
 log(
-  `Strata/strata-sweep: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}, ` +
+  `Strata/strata-sweep: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, ` +
     `target units=${TARGET_UNITS}, review ceil=${REVIEW_CEIL}, verifyFloor=${VERIFY_FLOOR}, ` +
     `tiers review=${TIER.review} verify=${TIER.verify} systemic=${TIER.systemic} synth=${TIER.synth}`
 )

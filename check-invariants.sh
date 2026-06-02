@@ -221,9 +221,10 @@ if grep -qE "slice\(0,\s*(UNIT_LIMIT|HARD_LIMIT|950)\)" "$F"; then
 else
   FAIL "scale: HARD_LIMIT used as unit-list truncation — expected slice(0, UNIT_LIMIT) or slice(0, HARD_LIMIT) or slice(0, 950)"
 fi
-# Confirm UNIT_LIMIT is derived from HARD_LIMIT (the ADVISE_RESERVE pattern)
-grep_require "$F" "UNIT_LIMIT\s*=\s*HARD_LIMIT" \
-                                              "scale: UNIT_LIMIT = HARD_LIMIT - ADVISE_RESERVE (honest truncation accounting for advise slot)"
+# Confirm UNIT_LIMIT is derived from HARD_LIMIT (the ADVISE_RESERVE pattern); the ceiling may be
+# HARD_LIMIT or an explicit-agent-cap ternary (explicitMax != null ? explicitMax : HARD_LIMIT).
+grep_require "$F" "UNIT_LIMIT\s*=\s*\(?[^)]*HARD_LIMIT" \
+                                              "scale: UNIT_LIMIT derived from HARD_LIMIT - ADVISE_RESERVE (honest truncation; honors explicit agent cap)"
 # Spawned counter must be present (ADOPTED IDEA gap closed in P3)
 grep_require "$F" "let spawned\s*=\s*0" "scale: spawned counter present (honest agent-count reporting)"
 

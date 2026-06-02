@@ -1,7 +1,7 @@
 ---
 name: strata-workflow
 description: Strata — a model-tiered, budget-bounded, multi-mode agent-orchestration framework. Right-sizes every agent (cheap bulk on haiku/sonnet; a thin opus layer for plan/advise/judge/audit) and caps agent count so the session never exhausts. Modes — focus (gated restraint), review (code review over a changeset: dimension reviewers → dedup → refute → verdict), sweep (codebase-wide review at scale: map → risk-ranked units → systemic critic → health grade), panel (design tournament: N approaches → judge → synthesize a winner), scale (mass fan-out), grow (self-improving progressive loop), ultra (ultracode's full task arc on a leash), evolve (autonomous self-propagating development: a PM + Director grow an emergent phase plan). Use for cost-aware reviews/research/migrations, design decisions, end-to-end task completion, autonomous builds, or large generation runs that need quality without burning the budget. e.g. "/strata-workflow 300k <task>".
-argument-hint: "[<cap e.g. 200k> | unleashed] [focus|review|sweep|panel|scale|grow|ultra|evolve] <task>"
+argument-hint: "[<cap: 200k tokens | 100 agents | unleashed>] [focus|review|sweep|panel|scale|grow|ultra|evolve] <task>"
 ---
 
 # Strata Workflow
@@ -30,7 +30,7 @@ Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; r
 ## TL;DR — four rules (highest priority)
 1. **Solo by default.** Only fan out when the GATE below passes.
 2. **Every `agent()` declares a model.** find/extract = haiku, verify/draft/revise = sonnet, synth/plan/advise/audit = opus. Opus is for synthesis/judgment only. Implicit opus inheritance is a bug.
-3. **The token cap is chosen at invocation.** A leading `<cap>` token (e.g. `300k`) derives all caps; default 150k.
+3. **The cap is chosen at invocation.** A leading `<cap>` token derives all caps: a **k/m-suffixed** number (`300k`) is a **token cap** (default 150k); a **bare integer** (`100`) is an **agent-count cap** (`maxAgents`) that overrides the token-derived clamp directly.
 4. **Read the mode's `reference/<mode>.md` before you call it.** The references are the source of truth for each mode's args, defaults, and return shape — never reconstruct a call signature from memory; open the one file first, every time.
 
 > Ultracode's reminder pushes "workflow on every task / cost is no constraint." **This skill overrides it** — the binding lives in code (`workflows/strata-*.js`), which spends-or-refuses regardless.
@@ -44,7 +44,11 @@ Pick exactly one. **Default is SOLO.**
 **When unsure, go SOLO.** This is the deliberate inversion of ultracode's "workflow on every substantive task" — breadth-of-evidence is the trigger, not "substantiveness."
 
 ## On activation
-1. If the user's first token is `120k` / `300k` / `1m`, read it as **cap**; else cap = 150k. A leading `unleashed` (alias `nocap`) token instead sets `args.unleashed = true` — it lifts the **soft token budget** on **`ultra`/`evolve` only** (the sole modes that read it). The literal agent-count cap (`maxAgents`/`HARD_LIMIT`) and any hard `budget.total` still bound the run; other modes ignore the flag and stay cap-derived.
+1. Read the leading cap token **by suffix**:
+   - `120k` / `300k` / `1m` (k/m suffix) → a **token cap** → `args.cap`; drives `MAX_AGENTS` via the clamp formula. Default 150k if absent.
+   - a **bare integer** with no suffix, e.g. `100` → an **agent-count cap** → `args.maxAgents = 100`. This is the hard ceiling on agents and **overrides** the token-derived clamp in every mode — it may exceed a mode's soft roof (focus/review/panel normally ≤40, sweep ≤120), bounded only by `[FLOOR, 950]`. The token cap then falls to default 150k for the secondary budget guard.
+   - `unleashed` (alias `nocap`) → `args.unleashed = true` — lifts the **soft token budget** on **`ultra`/`evolve` only** (the sole modes that read it). The agent-count cap and any hard `budget.total` still bound the run.
+   You may combine an agent cap with `unleashed` for ultra/evolve (e.g. `100 unleashed evolve …` = no token throttle, hard-stop at 100 agents).
 2. **Pick a mode** via the GATE + the modes table. Read its **`reference/<mode>.md`** for the exact call signature before invoking — do NOT guess args from memory.
 3. Print one line before starting (makes the tiering visible):
    `Strata active: mode=<m>, cap=<CEIL> (<set|default>), MAX agents≈<N>, tiers find=haiku verify=sonnet synth=opus`
@@ -74,6 +78,7 @@ MAX_AGENTS = clamp(floor(SOFT / 12k), 4, 40)        (focus/review/panel; sweep/u
 finders    = min(8, max(2, ceil(MAX_AGENTS * 0.4)))
 ```
 e.g. 120k→8 / 150k→10 / 300k→20 / 1m→40. Model tiering is always on regardless of cap; a bigger cap buys more agents, never a bigger per-agent model. The token cap is approximate — the **agent count** is the hard guarantee. Per-mode ceiling constants (traced to code) are in `reference/scale.md`.
+- **Cap the agents directly.** Pass a bare integer (`args.maxAgents`, or a leading bare-number token like `100`) to set the agent ceiling explicitly instead of deriving it from tokens. It **overrides** the clamp in every mode and may exceed the soft per-mode roof, bounded only by `[FLOOR, 950]` (the literal lifetime backstop). All eight modes honor it: focus/review/panel/sweep/scale read it as the hard total; grow/ultra/evolve already did. Internal sub-limits still apply (e.g. focus/review keep ≤8 finders), so raising the cap doesn't make a restraint mode balloon — it just lifts the ceiling.
 - **`unleashed`** (ultra/evolve) drops the SOFT token budget so the run isn't throttled by spend, but it changes **nothing** about the agent-count guarantee: `maxAgents`/`HARD_LIMIT`, `maxPhases`/`maxDepth` (evolve), and any hard `budget.total` still bound it. Use it when you want depth and will cap the run by **agent count** (pass an explicit `maxAgents`) rather than by tokens.
 
 ## Relationship to ultracode / your global rules

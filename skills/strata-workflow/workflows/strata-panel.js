@@ -69,7 +69,13 @@ const hardTotal = () => {
 const candidates = [A.cap, hardTotal()].filter((n) => typeof n === 'number' && n > 0)
 const CEIL = candidates.length ? Math.min(...candidates) : DEFAULT_CAP
 const SOFT = Math.floor(CEIL * 0.8)
-const MAX_AGENTS = Math.max(AGENT_FLOOR, Math.min(AGENT_ROOF, Math.floor(SOFT / TOKENS_PER_AGENT)))
+// An explicit agent-count cap (a leading bare number like `100`) overrides the token-derived clamp and
+// may exceed the soft AGENT_ROOF — bounded only by [AGENT_FLOOR, HARD_LIMIT] so the literal counter stays honest.
+const HARD_LIMIT = 950
+const explicitMax = typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.floor(A.maxAgents) : null
+const MAX_AGENTS = explicitMax != null
+  ? Math.max(AGENT_FLOOR, Math.min(HARD_LIMIT, explicitMax))
+  : Math.max(AGENT_FLOOR, Math.min(AGENT_ROOF, Math.floor(SOFT / TOKENS_PER_AGENT)))
 
 // ---- the PRIMARY guard is a literal counter (needs no API, cannot fail) ----
 let spawned = 0
@@ -103,7 +109,7 @@ const ARTIFACT = A.artifactType || 'design / blueprint'
 const CONSTRAINTS = A.constraints ? String(A.constraints) : ''
 
 log(
-  `Strata/strata-panel: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}, ` +
+  `Strata/strata-panel: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, ` +
     `contenders=${N}, axes=[${AXES.join(', ')}], advise=${ADVISE}, ` +
     `tiers advise=${TIER.advise} diverge=${TIER.diverge} judge=${TIER.judge} synth=${TIER.synth}`
 )

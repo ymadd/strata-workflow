@@ -52,7 +52,10 @@ const HARD_LIMIT = 950
 // When the advise pre-pass is on (default) it adds 1 agent on top of the build units.
 // Reserve 1 slot for it so the total never exceeds HARD_LIMIT.
 const ADVISE_RESERVE = A.advise !== false ? 1 : 0
-const UNIT_LIMIT = HARD_LIMIT - ADVISE_RESERVE
+// An explicit agent-count cap (a leading bare number like `100`) lowers the lifetime ceiling so the
+// total fan-out (build units + advise) never exceeds it; absent it, HARD_LIMIT applies.
+const explicitMax = typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.min(Math.floor(A.maxAgents), HARD_LIMIT) : null
+const UNIT_LIMIT = (explicitMax != null ? explicitMax : HARD_LIMIT) - ADVISE_RESERVE
 if (units.length > UNIT_LIMIT) {
   log(`mass-fanout: ${units.length} units exceeds ${UNIT_LIMIT} (HARD_LIMIT=${HARD_LIMIT} minus ${ADVISE_RESERVE} for advise); truncating to ${UNIT_LIMIT}.`)
   units = units.slice(0, UNIT_LIMIT)
@@ -126,11 +129,11 @@ phase('Build')
 let done = 0
 const results = await pipeline(units, (unit, _orig, index) => {
   // Dual gate: token-budget cap (overCap) is the primary throttle when A.cap is set;
-  // counter cap (spawned >= HARD_LIMIT) is the hard backstop when A.cap is unset (overCap()
+  // counter cap (spawned >= the effective ceiling) is the hard backstop when A.cap is unset (overCap()
   // never fires when CAP=Infinity). The unit-list truncation to UNIT_LIMIT already guarantees
-  // spawned never exceeds HARD_LIMIT, but the explicit counter check here closes the honesty
-  // gap: the spawned counter is an actual gate, not just a reporter.
-  if (overCap() || spawned >= HARD_LIMIT) return null
+  // spawned never exceeds the ceiling, but the explicit counter check here closes the honesty
+  // gap: the spawned counter is an actual gate, not just a reporter. An explicit maxAgents lowers it.
+  if (overCap() || spawned >= (explicitMax != null ? explicitMax : HARD_LIMIT)) return null
   spawned++
   return agent(
     `${A.task}\n\n${INSTRUCTIONS}${advisory}\n\nUnit spec (build exactly this; make it distinct from siblings): ${JSON.stringify(
