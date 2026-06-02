@@ -23,13 +23,15 @@ Fan-out is powerful but easy to overdo: a panel of opus agents on every task bur
 | **review** | `strata-review.js` | You have a KNOWN change (git diff / PR / paths) and want a graded review — dimension reviewers → dedup → adversarial refute → verdict (approve / comment / request-changes). | the verdict only |
 | **sweep** | `strata-sweep.js` | You want to audit the WHOLE codebase — map into risk-ranked units → pipelined per-unit review+verify → cross-codebase dedup → systemic/architectural critic → health grade with an honest coverage note. | systemic critic + synthesis |
 | **panel** | `strata-panel.js` | ONE problem with many valid approaches — you want to *choose* the best design (architecture, API design, library selection, art direction). | advise + judge + synthesize |
+| **debate** | `strata-debate.js` | ONE proposition to stress-test (go/no-go, bull vs bear, build vs buy) — positions open → R rounds of adversarial rebuttal → moderator extracts surviving points + cruxes → integrated verdict. Domain-agnostic. | moderator + synthesize |
+| **research** | `strata-research.js` | A question to investigate by the scientific method — frame testable hypotheses → investigate (web-grounded) → adversarially refute the supported ones → cited synthesis with confidence + next experiments. Distinct from web-only deep-research. | frame + synthesize |
 | **scale** | `strata-scale.js` | A known work-list of N independent units (e.g. generate 500 components, transform N files). | advise pre-pass + audit |
 | **grow** | `strata-grow.js` | A self-improving generation loop that grows toward a cap or a goal, auto-generating rounds (Plan → Build → Audit → Repair). | plan + advise + audit |
 | **ultra** | `strata-ultra.js` | ONE substantial task taken end-to-end: understand → design → build → review → synthesize. ultracode's full arc that *dynamically* spawns agents where needed (opus advice / tie-breaks / completeness-grown units). Capped, or `unleashed`. | judge + advice + tie-break + critic + synthesize |
 | **evolve** | `strata-evolve.js` | Autonomous, self-propagating development toward a vision: a **PM** (opus) owns the goal + ideation, a **Director** (opus) grows an EMERGENT phase plan and SUBDIVIDES important phases (spawning more agents) until the PM judges it done. Writes real files. | PM + Director + ideation + synthesize |
 | _audit_ | `strata-audit.js` | A thin opus oversight layer that grades a large generated batch and returns systemic issues + a regenerate list. | grading + meta-critique |
 
-**Shared DNA:** focus = few done smartly · review = one change scrutinized to a verdict · sweep = the whole codebase reviewed at scale · panel = many proposed, one chosen · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped · evolve = an autonomous build that grows its own phase plan. `panel` *decides*; `scale`/`grow` *build*; `review` *judges a change*; `sweep` *audits the codebase*; `ultra`/`evolve` *do the most the cap allows* (ultra on a fixed arc, evolve on an emergent one). `focus` does the least. (focus vs review: *unknown surface, cheap haiku exploration* vs *known change, deep sonnet scrutiny + dedup + verdict*.)
+**Shared DNA:** focus = few done smartly · review = one change scrutinized to a verdict · sweep = the whole codebase reviewed at scale · panel = many proposed, one chosen · debate = one claim stress-tested adversarially · research = hypotheses framed, tested, refuted · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped · evolve = an autonomous build that grows its own phase plan. `panel` *decides*; `debate` *stress-tests a claim*; `research` *tests hypotheses*; `scale`/`grow` *build*; `review` *judges a change*; `sweep` *audits the codebase*; `ultra`/`evolve` *do the most the cap allows* (ultra on a fixed arc, evolve on an emergent one). `focus` does the least. **review/sweep are coding-specialized; debate/panel/research/scale/grow are domain-agnostic** (finance, strategy, analytics, R&D). (focus vs review: *unknown surface, cheap haiku exploration* vs *known change, deep sonnet scrutiny + dedup + verdict*.)
 
 ## Model tiering
 
@@ -108,6 +110,8 @@ strata-workflow/                    # repo root — also its own plugin + market
 │           ├── strata-review.js    # code review of a change: dimension reviewers → dedup → refute → verdict
 │           ├── strata-sweep.js     # codebase-wide review: map → risk-ranked units → systemic critic → grade
 │           ├── strata-panel.js     # design tournament: diverge → judge → synthesize
+│           ├── strata-debate.js    # dialectic: open → rebut (×R) → moderate → synthesize
+│           ├── strata-research.js  # hypothesis loop: frame → investigate → refute → synthesize
 │           ├── strata-scale.js     # advise → build (×N) → audit → repair
 │           ├── strata-grow.js      # self-improving / goal-driven progressive loop
 │           ├── strata-ultra.js     # full task arc: understand → design → build → review → synthesize

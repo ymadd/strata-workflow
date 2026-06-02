@@ -93,6 +93,8 @@ const EXPECTED_WORKFLOWS = [
   'strata-grow.js',
   'strata-ultra.js',
   'strata-evolve.js',
+  'strata-debate.js',
+  'strata-research.js',
   'strata-audit.js',
 ]
 
@@ -105,6 +107,8 @@ const EXPECTED_REFERENCES = [
   'grow.md',
   'ultra.md',
   'evolve.md',
+  'debate.md',
+  'research.md',
 ]
 
 for (const wf of EXPECTED_WORKFLOWS) {
@@ -247,6 +251,22 @@ const CAP_RULES = {
     hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
     hard_limit_max: 950,
     gate_fn: 'canSpawnWork',
+  },
+  'strata-debate.js': {
+    must_contain: ['MAX_AGENTS', 'canArgue', 'AGENT_ROOF', 'HARD_LIMIT'],
+    roof_pattern: /AGENT_ROOF\s*=\s*(\d+)/,
+    roof_max: 40,
+    hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
+    hard_limit_max: 950,
+    gate_fn: 'canArgue',
+  },
+  'strata-research.js': {
+    must_contain: ['MAX_AGENTS', 'canExplore', 'AGENT_ROOF', 'HARD_LIMIT'],
+    roof_pattern: /AGENT_ROOF\s*=\s*(\d+)/,
+    roof_max: 40,
+    hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
+    hard_limit_max: 950,
+    gate_fn: 'canExplore',
   },
   // strata-audit.js: charter ADOPTED IDEA — literal agent-count cap added: HARD_LIMIT + canSpawn()
   // nBatches is truncated to HARD_LIMIT-1 before the pipeline; the critic is also gated.
@@ -469,6 +489,7 @@ section('4. Model Tiering')
 const OPUS_ALLOWED_ROLES = new Set([
   'pm', 'director', 'ideate', 'synth', 'judge', 'advise', 'audit', 'critic', 'tiebreak',
   'systemic', // sweep's cross-cutting critic = opus
+  'frame', // research's question→hypotheses framing = an opus reasoning role
   // strata-grow explicit vars (not in TIER map)
 ])
 

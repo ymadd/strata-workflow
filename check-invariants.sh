@@ -53,11 +53,13 @@ echo "── 1. Mode Inventory ────────────────�
 REQUIRED_SCRIPTS=(
   strata-focus.js strata-review.js strata-sweep.js strata-panel.js
   strata-scale.js strata-grow.js   strata-ultra.js strata-evolve.js
+  strata-debate.js strata-research.js
   strata-audit.js
 )
 REQUIRED_REFS=(
   focus.md review.md sweep.md panel.md
   scale.md grow.md  ultra.md evolve.md
+  debate.md research.md
 )
 
 for s in "${REQUIRED_SCRIPTS[@]}"; do
