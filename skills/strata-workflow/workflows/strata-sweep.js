@@ -82,7 +82,11 @@ const TARGET_UNITS = explicitUnits || REVIEW_CEIL
 // ---- the PRIMARY guard is a literal counter (needs no API, cannot fail) ----
 let spawned = 0
 const startSpent = spentNow()
-const overBudget = () => spentNow() - startSpent >= SOFT
+// An explicit agent cap with NO explicit token cap makes the agent count the SOLE binding limit:
+// lift the soft token budget so it can't silently undercut the cap. A hard budget.total (the +N
+// directive, enforced by the runtime) still applies; passing a k/m token cap too re-imposes SOFT.
+const UNCAP_TOKENS = explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0)
+const overBudget = () => (UNCAP_TOKENS ? false : spentNow() - startSpent >= SOFT)
 const mustReserve = () => remainingNow() < RESERVE
 const canSpawn = () => spawned < MAX_AGENTS && !overBudget()
 // review/verify must leave room for systemic + synth
@@ -111,7 +115,7 @@ const DIMS = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions :
 const DIM_LINE = DIMS.map((d) => `- ${d}`).join('\n')
 
 log(
-  `Strata/strata-sweep: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, ` +
+  `Strata/strata-sweep: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ` (explicit agent cap${UNCAP_TOKENS ? '; token budget lifted' : ''})` : ''}, ` +
     `target units=${TARGET_UNITS}, review ceil=${REVIEW_CEIL}, verifyFloor=${VERIFY_FLOOR}, ` +
     `tiers review=${TIER.review} verify=${TIER.verify} systemic=${TIER.systemic} synth=${TIER.synth}`
 )

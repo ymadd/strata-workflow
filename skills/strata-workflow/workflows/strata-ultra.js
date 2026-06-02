@@ -86,7 +86,10 @@ const MAX_AGENTS = UNLEASHED
 let spawned = 0
 const startSpent = spentNow()
 // unleashed bypasses the soft token budget; MAX_AGENTS and any hard budget.total still bound the run.
-const overBudget = () => (UNLEASHED ? false : spentNow() - startSpent >= SOFT)
+// An explicit agent cap with NO explicit token cap has the same effect — the agent count is then the
+// sole binding limit; passing a k/m token cap alongside it re-imposes SOFT.
+const TOKEN_FREE = UNLEASHED || (explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0))
+const overBudget = () => (TOKEN_FREE ? false : spentNow() - startSpent >= SOFT)
 const SYNTH_RESERVE = 1
 // the FRONT arc (understand/design/initial build) gets a small GUARANTEED slice via phase ceilings,
 // kept lean (~35%) so the DYNAMIC back half — where opus escalations and gap-growth live — has room.

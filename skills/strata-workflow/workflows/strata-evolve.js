@@ -77,7 +77,10 @@ const ROOT = A.root ? String(A.root) : '.'
 // ---- the PRIMARY guard is a literal counter (needs no API, cannot fail) ----
 let spawned = 0
 const startSpent = spentNow()
-const overBudget = () => (UNLEASHED ? false : spentNow() - startSpent >= SOFT)
+// An explicit agent cap with NO explicit token cap also makes the agent count the sole binding limit
+// (same as unleashed's soft-budget lift); a k/m token cap re-imposes SOFT.
+const TOKEN_FREE = UNLEASHED || (explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0))
+const overBudget = () => (TOKEN_FREE ? false : spentNow() - startSpent >= SOFT)
 const canSpawn = () => spawned < MAX_AGENTS && !overBudget()
 const canSpawnWork = () => spawned < MAX_AGENTS - SYNTH_RESERVE && !overBudget()
 

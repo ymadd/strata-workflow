@@ -76,7 +76,11 @@ const FINDERS = Math.min(8, Math.max(2, Math.ceil(MAX_AGENTS * 0.4)))
 let spawned = 0
 // budget.spent() is the SHARED, cumulative turn pool — measure THIS run relative to a baseline.
 const startSpent = spentNow()
-const overBudget = () => spentNow() - startSpent >= SOFT
+// An explicit agent cap with NO explicit token cap makes the agent count the SOLE binding limit:
+// lift the soft token budget so it can't silently undercut the cap. A hard budget.total (the +N
+// directive, enforced by the runtime) still applies; passing a k/m token cap too re-imposes SOFT.
+const UNCAP_TOKENS = explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0)
+const overBudget = () => (UNCAP_TOKENS ? false : spentNow() - startSpent >= SOFT)
 const mustReserve = () => remainingNow() < RESERVE
 const canSpawn = () => spawned < MAX_AGENTS && !overBudget()
 
@@ -98,7 +102,7 @@ if (A.diff) {
 const TARGET_NOTE = A.target ? `\nWhat this change is meant to do (reviewer context): ${A.target}\n` : ''
 
 log(
-  `Strata/strata-review: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, ` +
+  `Strata/strata-review: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ` (explicit agent cap${UNCAP_TOKENS ? '; token budget lifted' : ''})` : ''}, ` +
     `finders=${FINDERS}, floor=${SEVERITY_FLOOR}, fix=${WANT_FIX}, ` +
     `tiers review=${TIER.review} verify=${TIER.verify} synth=${TIER.synth}`
 )

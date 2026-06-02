@@ -80,7 +80,11 @@ const MAX_AGENTS = explicitMax != null
 // ---- the PRIMARY guard is a literal counter (needs no API, cannot fail) ----
 let spawned = 0
 const startSpent = spentNow()
-const overBudget = () => spentNow() - startSpent >= SOFT
+// An explicit agent cap with NO explicit token cap makes the agent count the SOLE binding limit:
+// lift the soft token budget so it can't silently undercut the cap. A hard budget.total (the +N
+// directive, enforced by the runtime) still applies; passing a k/m token cap too re-imposes SOFT.
+const UNCAP_TOKENS = explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0)
+const overBudget = () => (UNCAP_TOKENS ? false : spentNow() - startSpent >= SOFT)
 const canSpawn = () => spawned < MAX_AGENTS && !overBudget()
 
 // ---- distinct lenses keep contenders from collapsing onto the same idea ----
@@ -109,7 +113,7 @@ const ARTIFACT = A.artifactType || 'design / blueprint'
 const CONSTRAINTS = A.constraints ? String(A.constraints) : ''
 
 log(
-  `Strata/strata-panel: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, ` +
+  `Strata/strata-panel: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ` (explicit agent cap${UNCAP_TOKENS ? '; token budget lifted' : ''})` : ''}, ` +
     `contenders=${N}, axes=[${AXES.join(', ')}], advise=${ADVISE}, ` +
     `tiers advise=${TIER.advise} diverge=${TIER.diverge} judge=${TIER.judge} synth=${TIER.synth}`
 )

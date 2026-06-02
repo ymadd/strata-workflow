@@ -84,13 +84,17 @@ let spawned = 0
 // budget.spent() is the SHARED, cumulative turn pool (main loop + every workflow), NOT this run's spend.
 // So measure THIS invocation's spend relative to a baseline captured now; SOFT is a per-task budget.
 const startSpent = spentNow()
-const overBudget = () => spentNow() - startSpent >= SOFT
+// An explicit agent cap with NO explicit token cap makes the agent count the SOLE binding limit:
+// lift the soft token budget so it can't silently undercut the cap. A hard budget.total (the +N
+// directive, enforced by the runtime) still applies; passing a k/m token cap too re-imposes SOFT.
+const UNCAP_TOKENS = explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0)
+const overBudget = () => (UNCAP_TOKENS ? false : spentNow() - startSpent >= SOFT)
 const mustReserve = () => remainingNow() < RESERVE // remaining() is the global hard ceiling — keep absolute
 const canSpawn = () => spawned < MAX_AGENTS && !overBudget()
 
 log(
   `Strata/tiered-orchestrate: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), ` +
-    `MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ' (explicit agent cap)' : ''}, finders=${FINDERS}, tiers find=${TIER.find} verify=${TIER.verify} synth=${TIER.synth}`
+    `MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ` (explicit agent cap${UNCAP_TOKENS ? '; token budget lifted' : ''})` : ''}, finders=${FINDERS}, tiers find=${TIER.find} verify=${TIER.verify} synth=${TIER.synth}`
 )
 
 // ---- task profiles: default investigation dimensions per class ----
