@@ -43,7 +43,7 @@ Modes are **verbs** (decide, judge, test); domains are **contexts** (finance, ma
 ```
 
 - **Invocation** is order-independent: each leading token self-identifies as a mode / domain / cap, so `debate finance 300k` and `300k finance debate` parse the same (no positional hazard). Mode defaults to `focus`; bare `/strata-workflow` prints the mode menu.
-- Profiles live in `skills/general/reference/domains/<domain>.md` as a JSON preset block; the router merges the entry for the chosen mode into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints`). **Caller args > domain preset > mode defaults.** Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`). Shipped: **finance**, **code**.
+- Profiles live in `skills/general/reference/domains/<domain>.md` as a JSON preset block; the router merges the entry for the chosen mode into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints` for panel/debate/research, else prepended to the `task` text). **Caller args > domain preset > mode defaults.** Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`). Shipped: **finance**, **code**.
 - **Thin alias commands:** `strata-workflow:finance` and `strata-workflow:code` are tiny launcher skills that fix the domain and delegate to the **same** bundled workflows — no duplicated JS, the caps/tiering/verify guarantees stay in one place. They give per-domain command ergonomics without fragmenting the engine.
 - Per-mode cap/tier constants are intentionally non-uniform; the common baseline vs the overrides are catalogued in `reference/tiering-constants.md`.
 

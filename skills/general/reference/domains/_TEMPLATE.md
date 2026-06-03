@@ -4,7 +4,7 @@ One paragraph: what this domain covers and which modes it pairs with best. A pro
 
 ## Presets
 
-The router reads this JSON, takes the entry for the chosen mode, and merges it into that mode's args. **Precedence: caller args > this profile > mode defaults.** `qualityBar` and `pitfalls` append into `constraints` for every mode. Include only the mode entries that make sense for the domain; omit the rest.
+The router reads this JSON, takes the entry for the chosen mode, and merges it into that mode's args. **Precedence: caller args > this profile > mode defaults.** `qualityBar` and `pitfalls` fold into `constraints` for panel/debate/research, and are prepended to the `task` text for the other modes. Include only the mode entries that make sense for the domain; omit the rest.
 
 ```json
 {
@@ -20,5 +20,5 @@ The router reads this JSON, takes the entry for the chosen mode, and merges it i
 
 Notes:
 - Keep arrays tight and genuinely domain-specific — a shallow profile is worse than none. Aim for depth in 1–2 domains over breadth across many.
-- `axes`/`lenses`/`positions`/`dimensions` map 1:1 to the mode args of the same name; `framing` is injected into research's hypothesis-framing prompt; `qualityBar`+`pitfalls` go into `constraints`.
+- `axes`/`lenses`/`positions`/`dimensions` map 1:1 to the mode args of the same name; `framing` is injected into research's hypothesis-framing prompt; `qualityBar`+`pitfalls` go into `constraints` (panel/debate/research) or are prepended to the `task` text (other modes).
 - The file name (minus `.md`) is the domain token, e.g. `marketing.md` → `/strata-workflow marketing panel "..."`.

@@ -104,12 +104,24 @@ const CRITIC_SCHEMA = {
     regenerateIds: { type: 'array', items: { type: 'string' } },
   },
 }
-const critic = canSpawn() ? (spawned++, await agent(
-  `You are the lead QA critic over a batch of ${A.count} generated UI components (avg quality ${avg}/100; ${broken.length} flagged broken/low <60; ${dups.length} flagged duplicate). Flagged verdicts (JSON): ${JSON.stringify(
-    [...broken, ...dups].slice(0, 140)
-  )}. Identify SYSTEMIC issues (patterns across many units — e.g. a whole visual style or component-type that consistently fails or looks identical), give an overall letter grade with one sentence, name the worst categories, and produce regenerateIds = the ids worth regenerating (broken/low + clear dups; cap ~80, prioritise the worst).`,
-  { label: 'critic', phase: 'Critic', model: 'opus', schema: CRITIC_SCHEMA }
-)) : null
+// The critic is audit's synthesis stage — wrap it so a budget.total ceiling throw degrades to a
+// partial result (the per-item data) instead of an uncaught error, matching the fail-open guarantee
+// every other mode's synthesis honors.
+let critic = null
+if (canSpawn()) {
+  spawned++
+  try {
+    critic = await agent(
+      `You are the lead QA critic over a batch of ${A.count} generated UI components (avg quality ${avg}/100; ${broken.length} flagged broken/low <60; ${dups.length} flagged duplicate). Flagged verdicts (JSON): ${JSON.stringify(
+        [...broken, ...dups].slice(0, 140)
+      )}. Identify SYSTEMIC issues (patterns across many units — e.g. a whole visual style or component-type that consistently fails or looks identical), give an overall letter grade with one sentence, name the worst categories, and produce regenerateIds = the ids worth regenerating (broken/low + clear dups; cap ~80, prioritise the worst).`,
+      { label: 'critic', phase: 'Critic', model: 'opus', schema: CRITIC_SCHEMA }
+    )
+  } catch (e) {
+    log(`critic stage failed (${String(e && e.message ? e.message : e)}); returning per-item data without the systemic critique`)
+    critic = null
+  }
+}
 
 return {
   count: A.count,

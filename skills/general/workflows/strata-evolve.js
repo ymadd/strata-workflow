@@ -491,6 +491,13 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
       // a repair the overseers WANTED but the budget blocked — record it honestly, don't mislabel as PASS
       evolution.push(`REPAIR-SKIPPED ${ph.id} (score ${grade.score}): cap reached`)
     }
+  } else if (effective === 'subdivide') {
+    // subdivide was the arbitrated decision but could NOT apply — either depth is maxed, or (when the
+    // PM overrode pass/repair → subdivide) the Director proposed no sub-phases to insert. Record it
+    // honestly instead of silently falling through to a plain PASS.
+    const why = ph.depth >= MAX_DEPTH ? `max depth (${MAX_DEPTH}) reached` : 'no Director-proposed sub-phases to insert (a PM override had nothing to expand)'
+    evolution.push(`SUBDIVIDE-SKIPPED ${ph.id} (score ${grade.score}): ${why} — advancing as PASS`)
+    log(`evolve: ${ph.id} subdivide could not apply (${why}); advancing`)
   } else {
     evolution.push(`PASS ${ph.id} (${ph.kind}, score ${grade.score})`)
   }

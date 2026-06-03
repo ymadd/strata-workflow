@@ -11,6 +11,7 @@ Workflow({
     rounds: 3,                                   // follow-up rounds, loop-until-dry (clamped to 6; default 3)
     grounded: true,                              // web grounding ON by default (WebSearch/WebFetch + URLs)
     dataPath: "./data",                          // OR ground in local data via Bash/Read (when grounded:false)
+    framing: "<domain method for forming hypotheses>", // injected into the FRAME prompt (a domain profile supplies this)
     constraints: "<scope / out-of-bounds>",
     cap: 300000,                                 // or a bare maxAgents to cap by agent count
     tierHint: "cheap"                            // frame on sonnet (synth stays opus)

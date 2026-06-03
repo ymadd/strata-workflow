@@ -1,12 +1,12 @@
 # finance — domain profile
 
-A preset bundle for financial analysis, valuation, capital-allocation, and deal work. It does **not** add machinery — it fills in the args the modes already accept (`dimensions`, `axes`, `lenses`, `positions`, `constraints`) with an expert-level financial default so a generic mode reasons like a financial analyst.
+A preset bundle for financial analysis, valuation, capital-allocation, and deal work. It does **not** add machinery — it fills in the args the modes already accept (`dimensions`, `axes`, `lenses`, `positions`) with an expert-level financial default so a generic mode reasons like a financial analyst.
 
 **Use it when** the task is an investment/financing/valuation/budget/deal decision or a financial-model review. Pairs most naturally with **debate** (bull/bear/base), **panel** (allocation options), **research** (driver hypotheses), and **review/sweep** (model audit).
 
 ## Presets
 
-The router reads this JSON, takes the entry for the chosen mode, and merges it into that mode's args. **Precedence: caller-supplied args > this profile > the mode's own defaults.** `qualityBar` and `pitfalls` are appended into `constraints` for every mode.
+The router reads this JSON, takes the entry for the chosen mode, and merges it into that mode's args. **Precedence: caller-supplied args > this profile > the mode's own defaults.** `qualityBar` and `pitfalls` are folded into `constraints` for panel/debate/research, and prepended to the `task` text for the other modes (focus/review/sweep/scale/grow/ultra/evolve, which take no `constraints` arg).
 
 ```json
 {

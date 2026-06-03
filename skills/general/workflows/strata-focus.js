@@ -35,12 +35,9 @@ const AGENT_FLOOR = 4
 const AGENT_ROOF = 40
 
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
-const TIER = { find: 'haiku', extract: 'haiku', verify: 'sonnet', synth: 'opus', implement: 'sonnet' }
+const TIER = { find: 'haiku', verify: 'sonnet', synth: 'opus' }
 if (A.tierHint === 'cheap') TIER.verify = 'haiku'
-if (A.tierHint === 'hard') {
-  TIER.verify = 'sonnet'
-  TIER.implement = 'opus'
-}
+if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on the adversarial verify when correctness is critical
 
 // ---- budget reads are BEST-EFFORT (the budget API is documented but unexercised; never let it throw) ----
 const spentNow = () => {

@@ -182,6 +182,32 @@ for (const alias of ['code', 'finance']) {
   }
 }
 
+// CONTRACT: every domain-profile field must be CONSUMED by the mode(s) it targets — that mode's JS must
+// read `A.<field>`. This catches the "inert preset" drift class (the framing/constraints bug): a profile
+// sets a field the mode never reads, so the preset silently does nothing. Mapping mirrors SKILL.md step 3.
+const PROFILE_FIELD_CONSUMERS = {
+  dimensions: ['focus', 'review', 'sweep'],
+  lenses: ['panel'],
+  axes: ['panel', 'debate'],
+  positions: ['debate'],
+  framing: ['research'],
+  constraints: ['panel', 'debate', 'research'], // modes that READ A.constraints; others get qualityBar via task-text (router-folded)
+}
+for (const [field, modes] of Object.entries(PROFILE_FIELD_CONSUMERS)) {
+  for (const mode of modes) {
+    const src = readFile(path.join(WORKFLOWS_DIR, `strata-${mode}.js`))
+    if (!src) {
+      fail(`contract:${field}->${mode}`, `strata-${mode}.js unreadable`)
+      continue
+    }
+    if (new RegExp(`A\\.${field}\\b`).test(src)) {
+      pass(`contract:${field}->${mode}`, `strata-${mode}.js reads A.${field}`)
+    } else {
+      fail(`contract:${field}->${mode}`, `domain profiles target ${mode} with '${field}' but strata-${mode}.js never reads A.${field} — INERT preset (dead wiring)`)
+    }
+  }
+}
+
 // ============================================================
 // CHECK 2: SYNTAX (module-aware node --check)
 // ============================================================
@@ -695,41 +721,32 @@ for (const wf of EXPECTED_WORKFLOWS) {
 //   (b) the verifier confirms they are still present (they must not be silently removed), and
 //   (c) the verifier confirms NO OTHER worker role is promoted to opus by tierHint=hard.
 //
-// focus.js: tierHint='hard' sets TIER.implement = 'opus' (implement role; implement is a worker).
-//   This is the documented hard-mode opt-in: the caller explicitly requests opus-quality implementation
-//   when correctness is paramount.  The default is TIER.implement='sonnet'.
+// focus.js: tierHint='hard' sets TIER.verify = 'opus' (the adversarial-verify role gets opus when
+//   correctness is critical — the SAME opt-in as review.js). Default TIER.verify='sonnet' (and
+//   tierHint='cheap' lowers it to haiku). The former TIER.implement/extract keys were removed as
+//   DEAD WIRING — they were never passed to any agent() (the old hard→implement='opus' was a no-op).
 // review.js: tierHint='hard' sets TIER.verify = 'opus' (verify role; verify is a worker in the refutation
 //   sense, but is an allowed cross-check role — it is a second-level quality gate, not a bulk builder).
 //   The default is TIER.verify='sonnet'.
-// Together these are the ONLY two non-default opus TIER mutations in the codebase; all others are
+// Together these are the ONLY non-default opus TIER mutations in the codebase; all others are
 // plan/advise/judge/audit/synth defaults.
 
 {
   const focusSrc = readFile(path.join(WORKFLOWS_DIR, 'strata-focus.js'))
   if (focusSrc) {
-    // Assert: tierHint='hard' block exists and sets implement='opus'
-    if (/A\.tierHint\s*===\s*['"]hard['"]/.test(focusSrc) && /TIER\.implement\s*=\s*['"]opus['"]/.test(focusSrc)) {
-      pass('tier:strata-focus.js:tierhint-hard-implement-opus',
-        "tierHint='hard' sets TIER.implement='opus' (documented non-default caller opt-in; implement role only)")
+    // Assert: tierHint='hard' sets verify='opus' (was a no-op implement='opus' before — fixed)
+    if (/A\.tierHint\s*===\s*['"]hard['"]\)\s*TIER\.verify\s*=\s*['"]opus['"]/.test(focusSrc)) {
+      pass('tier:strata-focus.js:tierhint-hard-verify-opus',
+        "tierHint='hard' sets TIER.verify='opus' (documented non-default caller opt-in; verify role only)")
     } else {
-      fail('tier:strata-focus.js:tierhint-hard-implement-opus',
-        "tierHint='hard' TIER.implement='opus' mutation not found — verify focus.js tiering is intact")
+      fail('tier:strata-focus.js:tierhint-hard-verify-opus',
+        "tierHint='hard' TIER.verify='opus' mutation not found — verify focus.js tiering is intact")
     }
-    // Assert: no OTHER worker role is promoted to opus by tierHint=hard in focus.js.
-    // The allowed hard-mode mutations are: verify→sonnet (cheap mode undoes this), implement→opus.
-    // Extract the tierHint='hard' block and check for unexpected opus assignments.
-    const hardBlockMatch = focusSrc.match(/if\s*\(A\.tierHint\s*===\s*['"]hard['"]\)\s*\{([^}]*)\}/)
-    if (hardBlockMatch) {
-      const hardBlock = hardBlockMatch[1]
-      const unexpectedOpus = (hardBlock.match(/TIER\.\w+\s*=\s*['"]opus['"]/g) || [])
-        .filter(m => !m.includes('implement'))
-      if (unexpectedOpus.length > 0) {
-        fail('tier:strata-focus.js:tierhint-hard-no-extra-opus-worker',
-          `tierHint='hard' block promotes unexpected roles to opus: ${unexpectedOpus.join(', ')}`)
-      } else {
-        pass('tier:strata-focus.js:tierhint-hard-no-extra-opus-worker',
-          "tierHint='hard' only promotes implement→opus (no unexpected worker roles promoted)")
-      }
+    // Guard: the removed dead TIER keys must not return (they were never passed to agent()).
+    if (/TIER\.(implement|extract)\b/.test(focusSrc)) {
+      fail('tier:strata-focus.js:no-dead-tier-keys', 'focus.js references TIER.implement/extract — these were removed as dead wiring')
+    } else {
+      pass('tier:strata-focus.js:no-dead-tier-keys', 'no dead TIER.implement/extract keys')
     }
   }
 

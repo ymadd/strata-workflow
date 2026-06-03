@@ -12,6 +12,7 @@ Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-evolve.js", args: {
   ideation: "bold",                           // "bold" (propose new directions, default) | "conservative" (spec-faithful)
   maxDepth: 3,                                // how deep a phase may be recursively SUBDIVIDED (self-propagation backstop)
   maxPhases: 40,                              // hard backstop on total phases run
+  maxRepairs: 2,                              // per-phase repair cap (default 2) so one failing phase can't starve the queue
   cap: 500000,                                // derives MAX_AGENTS (roof ≤120). bigger cap = more phases / subdivision fire
   unleashed: false,                           // true = ignore the cap entirely (see ultra.md); the 950 backstop still holds
   maxAgents: 0,                               // optional explicit override / safety bound
