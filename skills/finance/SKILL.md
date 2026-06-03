@@ -1,7 +1,7 @@
 ---
 name: finance
 description: Strata pre-scoped to the FINANCE domain — run any Strata mode (debate / panel / research / review / …) with finance dimensions, axes, positions, and an analyst quality-bar already applied. Use for investment, valuation, capital-allocation, budgeting, or deal decisions and financial-model review. A thin alias over the shared strata-workflow engine (no duplicated logic). e.g. "/strata-workflow:finance debate Acquire CompanyX for $50M?"
-argument-hint: "[debate|panel|research|review|sweep|focus|scale|grow|ultra|evolve] [<cap: 200k | 100 agents | unleashed>] <task>"
+argument-hint: "[mode e.g. debate] [cap] <task>"
 ---
 
 # Strata — finance domain (alias)

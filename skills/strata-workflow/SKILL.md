@@ -1,7 +1,7 @@
 ---
 name: strata-workflow
 description: Strata — a model-tiered, budget-bounded, multi-mode agent-orchestration framework. Right-sizes every agent (cheap bulk on haiku/sonnet; a thin opus layer for plan/advise/judge/audit) and caps agent count so the session never exhausts. Modes — focus (gated restraint), review (code review over a changeset: dimension reviewers → dedup → refute → verdict), sweep (codebase-wide review at scale: map → risk-ranked units → systemic critic → health grade), panel (design tournament: N approaches → judge → synthesize a winner), debate (dialectic stress-test of one proposition: positions → adversarial rebuttal rounds → moderator → integrated verdict), research (hypothesis-driven automation: frame → investigate web-grounded → refute → cited synthesis), scale (mass fan-out), grow (self-improving progressive loop), ultra (ultracode's full task arc on a leash), evolve (autonomous self-propagating development: a PM + Director grow an emergent phase plan). Use for cost-aware reviews/research/decisions/migrations, design decisions, end-to-end task completion, autonomous builds, or large generation runs that need quality without burning the budget. e.g. "/strata-workflow 300k <task>".
-argument-hint: "[focus|review|sweep|panel|debate|research|scale|grow|ultra|evolve] [<domain e.g. finance>] [<cap: 200k | 100 agents | unleashed>] <task>"
+argument-hint: "[mode] [domain] [cap] <task>  ·  bare = mode menu"
 ---
 
 # Strata Workflow

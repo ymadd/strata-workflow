@@ -1,7 +1,7 @@
 ---
 name: code
 description: Strata pre-scoped to the CODE domain — run any Strata mode (review / sweep / panel / debate / research / …) with software-engineering dimensions, axes, and a staff-engineer quality-bar already applied. Use for code review, architecture decisions, debugging, feasibility, or build-vs-buy calls. A thin alias over the shared strata-workflow engine (no duplicated logic). e.g. "/strata-workflow:code review the current branch".
-argument-hint: "[review|sweep|panel|debate|research|focus|scale|grow|ultra|evolve] [<cap: 200k | 100 agents | unleashed>] <task>"
+argument-hint: "[mode e.g. review] [cap] <task>"
 ---
 
 # Strata — code domain (alias)
