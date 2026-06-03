@@ -109,6 +109,7 @@ const EXPECTED_REFERENCES = [
   'evolve.md',
   'debate.md',
   'research.md',
+  'tiering-constants.md',
 ]
 
 for (const wf of EXPECTED_WORKFLOWS) {
@@ -135,7 +136,7 @@ for (const ref of EXPECTED_REFERENCES) {
 // Domain profiles (data-injection presets — verbs × contexts without new modes). finance shipped +
 // a _TEMPLATE; each shipped profile's ```json preset block MUST be valid JSON since the router parses it.
 const DOMAINS_DIR = path.join(REFERENCE_DIR, 'domains')
-const EXPECTED_DOMAINS = ['finance.md', '_TEMPLATE.md']
+const EXPECTED_DOMAINS = ['finance.md', 'code.md', '_TEMPLATE.md']
 for (const d of EXPECTED_DOMAINS) {
   const p = path.join(DOMAINS_DIR, d)
   if (fs.existsSync(p)) {
@@ -144,7 +145,7 @@ for (const d of EXPECTED_DOMAINS) {
     fail(`inventory:domains/${d}`, `missing at ${p}`)
   }
 }
-for (const d of ['finance.md']) {
+for (const d of ['finance.md', 'code.md']) {
   const src = readFile(path.join(DOMAINS_DIR, d))
   if (!src) {
     fail(`domain:${d}:json`, 'unreadable')
@@ -160,6 +161,24 @@ for (const d of ['finance.md']) {
     pass(`domain:${d}:json`, 'preset JSON block parses')
   } catch (e) {
     fail(`domain:${d}:json`, `preset JSON invalid: ${e.message}`)
+  }
+}
+
+// Thin domain-alias skills (strata-workflow:code, strata-workflow:finance) must exist AND must NOT
+// carry a duplicated workflows/ dir — they delegate to the shared bundle (no JS duplication = the
+// debate's verdict: guarantees stay in one place).
+const PLUGIN_SKILLS_DIR = path.join(REPO_ROOT, 'skills')
+for (const alias of ['code', 'finance']) {
+  const skillMd = path.join(PLUGIN_SKILLS_DIR, alias, 'SKILL.md')
+  if (fs.existsSync(skillMd)) {
+    pass(`alias:${alias}:present`, 'thin alias SKILL.md present')
+  } else {
+    fail(`alias:${alias}:present`, `missing at ${skillMd}`)
+  }
+  if (fs.existsSync(path.join(PLUGIN_SKILLS_DIR, alias, 'workflows'))) {
+    fail(`alias:${alias}:no-dup-js`, `alias ${alias} has its OWN workflows/ — must delegate to the shared bundle, not duplicate JS`)
+  } else {
+    pass(`alias:${alias}:no-dup-js`, 'no duplicated workflows/ — delegates to shared bundle')
   }
 }
 

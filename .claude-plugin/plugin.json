@@ -1,7 +1,7 @@
 {
   "name": "strata-workflow",
   "displayName": "Strata Workflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Built on Claude Code's dynamic Workflows + ultracode — model-tiered, budget-bounded, multi-mode agent orchestration. Caps agent count and right-sizes every agent's model (cheap haiku/sonnet bulk, a thin opus layer for plan/advise/judge/audit) so a session never exhausts. Modes: focus, review, sweep, panel, debate, research, scale, grow, ultra, evolve (+ audit). review/sweep are coding-specialized; the rest are domain-agnostic (finance, strategy, analytics, R&D).",
   "author": {
     "name": "yamato kobayashi",
