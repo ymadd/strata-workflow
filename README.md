@@ -38,12 +38,12 @@ Fan-out is powerful but easy to overdo: a panel of opus agents on every task bur
 Modes are **verbs** (decide, judge, test); domains are **contexts** (finance, marketing, R&D). Instead of multiplying verbs × contexts into new modes, a **domain profile** presets the args a mode already accepts so a generic mode reasons like a domain expert — no mode code changes, the caps/tiering/verify guarantees are untouched.
 
 ```
-/strata-workflow 200k finance debate "Acquire CompanyX for $50M?"
+/strata-workflow:general 200k finance debate "Acquire CompanyX for $50M?"
 → debate runs with positions = [bull, bear, base], finance axes, and a finance quality-bar
 ```
 
 - **Invocation** is order-independent: each leading token self-identifies as a mode / domain / cap, so `debate finance 300k` and `300k finance debate` parse the same (no positional hazard). Mode defaults to `focus`; bare `/strata-workflow` prints the mode menu.
-- Profiles live in `skills/strata-workflow/reference/domains/<domain>.md` as a JSON preset block; the router merges the entry for the chosen mode into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints`). **Caller args > domain preset > mode defaults.** Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`). Shipped: **finance**, **code**.
+- Profiles live in `skills/general/reference/domains/<domain>.md` as a JSON preset block; the router merges the entry for the chosen mode into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints`). **Caller args > domain preset > mode defaults.** Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`). Shipped: **finance**, **code**.
 - **Thin alias commands:** `strata-workflow:finance` and `strata-workflow:code` are tiny launcher skills that fix the domain and delegate to the **same** bundled workflows — no duplicated JS, the caps/tiering/verify guarantees stay in one place. They give per-domain command ergonomics without fragmenting the engine.
 - Per-mode cap/tier constants are intentionally non-uniform; the common baseline vs the overrides are catalogued in `reference/tiering-constants.md`.
 
@@ -77,10 +77,10 @@ Clone the skill directory straight into where Claude Code looks for skills:
 ```bash
 # user-level (available in every project)
 git clone https://github.com/ymadd/strata-workflow /tmp/strata && \
-  cp -R /tmp/strata/skills/strata-workflow ~/.claude/skills/strata-workflow
+  cp -R /tmp/strata/skills/general ~/.claude/skills/general
 
 # OR project-level (available in one repo)
-cp -R /tmp/strata/skills/strata-workflow <your-repo>/.claude/skills/strata-workflow
+cp -R /tmp/strata/skills/general <your-repo>/.claude/skills/general
 ```
 
 Requires Claude Code with the **Workflow** tool available. No external dependencies, no build step — the skill is self-contained: the workflow scripts carry their own guards, and SKILL.md references them via `${CLAUDE_SKILL_DIR}`, so the same files work in either install mode.
@@ -90,14 +90,14 @@ Requires Claude Code with the **Workflow** tool available. No external dependenc
 Invoke the skill and, optionally, lead with a token budget that derives all the caps:
 
 ```
-/strata-workflow 300k <your task>
+/strata-workflow:general 300k <your task>
 ```
 
 - The leading `300k` (or `120k`, `1m`, …) is read as the **token cap**; default is `150k`.
 - From it Strata derives `MAX_AGENTS = clamp(floor(0.8 * cap / 12k), 4, 40)` for focus/review/panel (sweep/ultra/evolve use a ≤120 roof; grow takes an explicit `maxAgents`; scale uses `HARD_LIMIT=950` unit-list truncation).
 - The token cap is *approximate*; the **agent-count counter is the hard guarantee**.
 
-The skill picks a mode via a deliberate gate (default: do the least — solo, or a small fan-out only when breadth-of-evidence justifies it), then calls the matching workflow. See [`SKILL.md`](./skills/strata-workflow/SKILL.md) for the full model-facing specification, the gate, the per-mode call signatures, and the Goal-alignment flow used by `grow`.
+The skill picks a mode via a deliberate gate (default: do the least — solo, or a small fan-out only when breadth-of-evidence justifies it), then calls the matching workflow. See [`SKILL.md`](./skills/general/SKILL.md) for the full model-facing specification, the gate, the per-mode call signatures, and the Goal-alignment flow used by `grow`.
 
 ## How it works
 
@@ -114,7 +114,7 @@ strata-workflow/                    # repo root — also its own plugin + market
 │   ├── plugin.json                 # plugin manifest
 │   └── marketplace.json            # marketplace listing (single-plugin)
 ├── skills/
-│   └── strata-workflow/
+│   └── general/
 │       ├── SKILL.md                # lean router: the gate, cap math, tiering rules (small, always-loaded)
 │       ├── reference/              # per-mode call signatures — read on demand, not into context
 │       │   ├── focus.md   review.md   sweep.md    panel.md

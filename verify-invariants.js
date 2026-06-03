@@ -29,7 +29,7 @@ const VERBOSE = process.argv.includes('--verbose')
 
 // ---- path resolution ----
 const REPO_ROOT = path.resolve(__dirname)
-const SKILLS_DIR = path.join(REPO_ROOT, 'skills', 'strata-workflow')
+const SKILLS_DIR = path.join(REPO_ROOT, 'skills', 'general')
 const WORKFLOWS_DIR = path.join(SKILLS_DIR, 'workflows')
 const REFERENCE_DIR = path.join(SKILLS_DIR, 'reference')
 

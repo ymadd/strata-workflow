@@ -90,6 +90,8 @@ const HYP_PER_ROUND = Math.max(1, Math.min(typeof A.maxHypotheses === 'number' &
 const GROUNDED = A.grounded !== false // web grounding is ON by default
 const DATA_PATH = A.dataPath ? String(A.dataPath) : ''
 const CONSTRAINTS = A.constraints ? String(A.constraints) : ''
+// domain-supplied hypothesis-framing guidance (e.g. a finance/code profile's `framing`); injected into FRAME
+const FRAMING = A.framing ? String(A.framing) : ''
 const sourceNote = GROUNDED
   ? 'GATHER EVIDENCE FROM THE WEB: use WebSearch to find sources and WebFetch to read them. Every factual claim must carry a citable URL; an unsourced claim counts as unsupported.'
   : DATA_PATH
@@ -207,6 +209,7 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
     frame = await agent(
       `You are framing round ${round} of a hypothesis-driven research program. Break the question into specific, TESTABLE hypotheses — each with what evidence would confirm it and what would refute it.\n\n` +
         qBlock +
+        (FRAMING ? `\nFRAMING GUIDANCE (domain method — follow it):\n${FRAMING}\n` : '') +
         priorBlock +
         `\nPropose up to ${HYP_PER_ROUND} hypotheses. Prefer the ones that, if tested, most reduce uncertainty about the question. Set exhausted=true only if no fresh, testable hypothesis remains.`,
       { label: `frame:r${round}`, phase: groupLabel, model: TIER.frame, schema: FRAME_SCHEMA }

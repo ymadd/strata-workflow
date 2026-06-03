@@ -30,7 +30,7 @@ FAILURES=0
 
 # ── locate the skill root ────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_ROOT="${SCRIPT_DIR}/skills/strata-workflow"
+SKILL_ROOT="${SCRIPT_DIR}/skills/general"
 WF="${SKILL_ROOT}/workflows"
 REF="${SKILL_ROOT}/reference"
 
