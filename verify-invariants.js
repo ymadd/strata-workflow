@@ -132,6 +132,37 @@ for (const ref of EXPECTED_REFERENCES) {
 // Confirm the audit mode is NOT a reference md (it is documented in reference/scale.md per charter)
 // The charter says: "audit documented in reference/scale.md" — verify scale.md exists (already checked above)
 
+// Domain profiles (data-injection presets — verbs × contexts without new modes). finance shipped +
+// a _TEMPLATE; each shipped profile's ```json preset block MUST be valid JSON since the router parses it.
+const DOMAINS_DIR = path.join(REFERENCE_DIR, 'domains')
+const EXPECTED_DOMAINS = ['finance.md', '_TEMPLATE.md']
+for (const d of EXPECTED_DOMAINS) {
+  const p = path.join(DOMAINS_DIR, d)
+  if (fs.existsSync(p)) {
+    pass(`inventory:domains/${d}`, 'present')
+  } else {
+    fail(`inventory:domains/${d}`, `missing at ${p}`)
+  }
+}
+for (const d of ['finance.md']) {
+  const src = readFile(path.join(DOMAINS_DIR, d))
+  if (!src) {
+    fail(`domain:${d}:json`, 'unreadable')
+    continue
+  }
+  const m = src.match(/```json\s*([\s\S]*?)```/)
+  if (!m) {
+    fail(`domain:${d}:json`, 'no ```json preset block found')
+    continue
+  }
+  try {
+    JSON.parse(m[1])
+    pass(`domain:${d}:json`, 'preset JSON block parses')
+  } catch (e) {
+    fail(`domain:${d}:json`, `preset JSON invalid: ${e.message}`)
+  }
+}
+
 // ============================================================
 // CHECK 2: SYNTAX (module-aware node --check)
 // ============================================================

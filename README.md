@@ -33,6 +33,18 @@ Fan-out is powerful but easy to overdo: a panel of opus agents on every task bur
 
 **Shared DNA:** focus = few done smartly · review = one change scrutinized to a verdict · sweep = the whole codebase reviewed at scale · panel = many proposed, one chosen · debate = one claim stress-tested adversarially · research = hypotheses framed, tested, refuted · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped · evolve = an autonomous build that grows its own phase plan. `panel` *decides*; `debate` *stress-tests a claim*; `research` *tests hypotheses*; `scale`/`grow` *build*; `review` *judges a change*; `sweep` *audits the codebase*; `ultra`/`evolve` *do the most the cap allows* (ultra on a fixed arc, evolve on an emergent one). `focus` does the least. **review/sweep are coding-specialized; debate/panel/research/scale/grow are domain-agnostic** (finance, strategy, analytics, R&D). (focus vs review: *unknown surface, cheap haiku exploration* vs *known change, deep sonnet scrutiny + dedup + verdict*.)
 
+## Domain profiles
+
+Modes are **verbs** (decide, judge, test); domains are **contexts** (finance, marketing, R&D). Instead of multiplying verbs × contexts into new modes, a **domain profile** presets the args a mode already accepts so a generic mode reasons like a domain expert — no mode code changes, the caps/tiering/verify guarantees are untouched.
+
+```
+/strata-workflow 200k finance debate "Acquire CompanyX for $50M?"
+→ debate runs with positions = [bull, bear, base], finance axes, and a finance quality-bar
+```
+
+- Form: `[<cap>] <domain> <mode> <task>`. Profiles live in `skills/strata-workflow/reference/domains/<domain>.md` as a JSON preset block; the router merges the entry for the chosen mode into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints`). **Caller args > domain preset > mode defaults.**
+- Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`). Shipped: **finance**. `review`/`sweep` are coding-specialized; **debate/panel/research/scale/grow** are the domain-agnostic verbs a profile lifts. Depth over breadth — a shallow profile is worse than none.
+
 ## Model tiering
 
 Every `agent()` call declares a model; implicit "inherit the big model" is treated as a bug.
