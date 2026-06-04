@@ -59,7 +59,7 @@ Pick exactly one. **Default is SOLO.**
    - `unleashed` (alias `nocap`) → `args.unleashed = true` (lifts the soft token budget on **`ultra`/`evolve` only**).
    - anything else → the **task** starts here; stop classifying.
    **Mode defaults to `focus`** if no mode token appears (preserves the zero-knowledge shortcut). Mode names and domain names are disjoint sets, so classification is unambiguous; no mode name is numeric, so a bare integer is always a cap.
-2. **Bare invocation → print the menu, don't guess.** If there's no task (just `/strata-workflow`, or only a cap/domain with no task text), print the 10-mode one-liner menu (from the modes table) plus the cap/domain/`unleashed` syntax, and ask which mode + task. Never invent a task.
+2. **Bare invocation → print the menu, don't guess.** If there's no task (just `/strata-workflow`, or only a cap/domain with no task text), print the **Bare-invocation menu** block below **verbatim** (it carries the mode cheat-sheet, the domain/cap syntax, and copy-paste examples), then ask which mode + task. Never invent a task.
 3. **Domain profile (optional).** If a domain was classified in step 1, open **`reference/domains/<domain>.md`**, take the JSON preset for your chosen mode, and merge it into the mode's args — **precedence: caller-supplied args > domain preset > mode defaults**. Field → arg mapping: `dimensions` → focus/review/sweep; `lenses`/`axes` → panel; `positions`/`axes` → debate; `framing` → research (its FRAME prompt). **`qualityBar` + `pitfalls`:** fold them into the mode's `constraints` for the modes that accept one (`panel`/`debate`/`research`); for every other mode (focus/review/sweep/scale/grow/ultra/evolve, which take no `constraints` arg) **prepend them to the `task` text** so the quality bar reaches the agents regardless. Profiles are presets, not machinery — the mode is unchanged; a domain just makes a generic mode reason like a domain expert.
 4. **Pick a mode** via the GATE + the modes table. Read its **`reference/<mode>.md`** for the exact call signature before invoking — do NOT guess args from memory.
 5. Print one line before starting (makes the tiering visible):
@@ -67,6 +67,39 @@ Pick exactly one. **Default is SOLO.**
 6. **Resolve the workflow path.** Scripts live in this skill's own `workflows/` directory; references in `reference/`. Paths use **`${CLAUDE_SKILL_DIR}/...`** — the portable reference to this skill's install dir, which resolves whether Strata is a **standalone skill** (`~/.claude/skills/general/` or a project's `.claude/skills/`) or **bundled in a plugin** (the plugin cache). The Workflow tool needs an **absolute** path: if `${CLAUDE_SKILL_DIR}` is already expanded in your context, use it as-is; otherwise resolve it to the absolute directory this SKILL.md was loaded from. Nothing is machine-specific — the workflow JS carries its own guards and runtime notes in code comments, so no external memory or config is required.
 
 > **Per-mode constants are NOT uniform** (e.g. `DEFAULT_CAP` 150k/200k/500k, `TOKENS_PER_AGENT` 12k/16k, `AGENT_FLOOR` 4/6/8, `AGENT_ROOF` 40/120) — each mode file owns its own header by design (the no-import runtime has no shared module). The common-tier baseline vs the intentional per-mode overrides are catalogued in **`reference/tiering-constants.md`**; consult it before recalibrating any constant so the change stays coherent across modes.
+
+## Bare-invocation menu (print this VERBATIM when there's no task)
+```
+Strata — pick a mode, add an optional domain + cap, then your task.
+Order-independent; everything except the task is optional (mode defaults to focus).
+
+MODES (the verb — what to do)
+  focus     unknown surface → small find → verify        (default; does the least)
+  review    code-review a known diff / PR → verdict
+  sweep     audit the WHOLE codebase → health grade
+  panel     N designs → judge → pick a winner            (decide between options)
+  debate    one claim → adversarial rebuttal → verdict   (stress-test a proposition)
+  research  hypotheses → web-grounded investigate → cited synthesis
+  scale     mass fan-out over a KNOWN work-list
+  grow      self-improving Plan→Build→Audit→Repair loop
+  ultra     the full task arc (understand→build→synth), capped
+  evolve    autonomous build; a PM + Director grow the plan, writes real files
+
+DOMAIN (optional context):  code · finance · security
+CAP (optional):  300k or 1m = token cap · 100 = agent-count cap · unleashed = drop the token cap (ultra/evolve)
+TIER hint (optional):  cheap | hard   (hard = spend opus where it pays, e.g. debate's rebuttal)
+
+EXAMPLES (copy one, edit the task)
+  review このブランチの変更を見て
+  code review the current branch
+  security review ./src/api
+  300k finance debate "CompanyX を $50M で買収すべきか"
+  panel "通知システムの設計を3案出して、評価軸で選んで"
+  security 100 sweep ./src           ← cap by agent count (100) instead of tokens
+  hard debate "モノリスを今 microservices 化すべきか"   ← rebuttal runs on opus
+
+→ Reply with:  [mode] [domain] [cap] <your task>     (or just <your task> to use focus)
+```
 
 ## What the code guarantees (the binding lives here, not in prose)
 - **Primary guard = a literal agent counter** (needs no API, cannot fail): `MAX_AGENTS = clamp(floor(0.8*cap / 12k), 4, 40)` for focus/review/panel (sweep/ultra/evolve roof ≤120); scale uses `HARD_LIMIT=950` unit-list truncation (no clamp formula); an explicit `maxAgents` (≤950) for grow/ultra/evolve. Checked before every `agent()`. evolve additionally bounds `maxPhases` + subdivision `maxDepth`.
