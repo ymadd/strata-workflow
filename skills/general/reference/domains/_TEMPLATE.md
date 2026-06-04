@@ -19,6 +19,7 @@ The router reads this JSON, takes the entry for the chosen mode, and merges it i
 ```
 
 Notes:
+- **Before shipping, the profile must pass the adoption gate** — a hardened 3-arm ablation showing the "security signature." See `_ADOPTION-GATE.md`. Don't argue a profile in; measure it in.
 - Keep arrays tight and genuinely domain-specific — a shallow profile is worse than none. Aim for depth in 1–2 domains over breadth across many.
 - `axes`/`lenses`/`positions`/`dimensions` map 1:1 to the mode args of the same name; `framing` is injected into research's hypothesis-framing prompt; `qualityBar`+`pitfalls` go into `constraints` (panel/debate/research) or are prepended to the `task` text (other modes).
 - The file name (minus `.md`) is the domain token, e.g. `marketing.md` → `/strata-workflow marketing panel "..."`.

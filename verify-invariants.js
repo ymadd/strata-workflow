@@ -139,7 +139,7 @@ const DOMAINS_DIR = path.join(REFERENCE_DIR, 'domains')
 // Single source of truth for the shipped profiles — the inventory check, the JSON-validity loop, and the
 // contract-derivation loop all read this, so adding a domain (drop one md file) is a one-line edit here.
 const SHIPPED_DOMAINS = ['finance.md', 'code.md', 'security.md']
-const EXPECTED_DOMAINS = [...SHIPPED_DOMAINS, '_TEMPLATE.md']
+const EXPECTED_DOMAINS = [...SHIPPED_DOMAINS, '_TEMPLATE.md', '_ADOPTION-GATE.md']
 for (const d of EXPECTED_DOMAINS) {
   const p = path.join(DOMAINS_DIR, d)
   if (fs.existsSync(p)) {
