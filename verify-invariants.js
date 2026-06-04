@@ -136,7 +136,10 @@ for (const ref of EXPECTED_REFERENCES) {
 // Domain profiles (data-injection presets — verbs × contexts without new modes). finance shipped +
 // a _TEMPLATE; each shipped profile's ```json preset block MUST be valid JSON since the router parses it.
 const DOMAINS_DIR = path.join(REFERENCE_DIR, 'domains')
-const EXPECTED_DOMAINS = ['finance.md', 'code.md', '_TEMPLATE.md']
+// Single source of truth for the shipped profiles — the inventory check, the JSON-validity loop, and the
+// contract-derivation loop all read this, so adding a domain (drop one md file) is a one-line edit here.
+const SHIPPED_DOMAINS = ['finance.md', 'code.md', 'security.md']
+const EXPECTED_DOMAINS = [...SHIPPED_DOMAINS, '_TEMPLATE.md']
 for (const d of EXPECTED_DOMAINS) {
   const p = path.join(DOMAINS_DIR, d)
   if (fs.existsSync(p)) {
@@ -145,7 +148,7 @@ for (const d of EXPECTED_DOMAINS) {
     fail(`inventory:domains/${d}`, `missing at ${p}`)
   }
 }
-for (const d of ['finance.md', 'code.md']) {
+for (const d of SHIPPED_DOMAINS) {
   const src = readFile(path.join(DOMAINS_DIR, d))
   if (!src) {
     fail(`domain:${d}:json`, 'unreadable')
@@ -189,7 +192,7 @@ for (const alias of ['code', 'finance']) {
 // doesn't honor, or a typo'd preset key that would never inject.
 const INJECTABLE_FIELDS = new Set(['dimensions', 'lenses', 'axes', 'positions', 'framing', 'grounded'])
 const fieldConsumers = {} // field -> Set(mode), built from the real profiles
-for (const d of ['finance.md', 'code.md']) {
+for (const d of SHIPPED_DOMAINS) {
   const src = readFile(path.join(DOMAINS_DIR, d))
   const m = src && src.match(/```json\s*([\s\S]*?)```/)
   if (!m) continue

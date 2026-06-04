@@ -33,7 +33,7 @@ Shared DNA: *right-size the model, bound the spend.* focus = few done smartly; r
 Modes are **verbs** (decide, judge, test); domains are **contexts** (finance, marketing, R&D). Rather than multiply verbs × contexts into new modes, a **domain profile** presets the args a mode already accepts so a generic mode reasons like a domain expert. Form: `[<cap>] <domain> <mode> <task>` — e.g. `200k finance debate "acquire CompanyX for $50M?"` runs `debate` with bull/bear/base positions and finance axes.
 - Profiles live in **`reference/domains/<domain>.md`** as a JSON preset block. The router reads the entry for the chosen mode and merges it into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints` for panel/debate/research, else prepended to the `task` text). **Caller args > domain preset > mode defaults.**
 - **No mode code changes** — the binding guarantees (caps, tiering, gated verify) are untouched; a profile only changes *defaults*. Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`).
-- Shipped: **finance**. `review`/`sweep` are coding-specialized; **debate/panel/research/scale/grow** are the domain-agnostic verbs a profile lifts. Depth over breadth — a shallow profile is worse than none.
+- Shipped: **code**, **finance**, **security**. `review`/`sweep` accept caller-supplied dimensions (finance/security override them), so they are not code-locked; **debate/panel/research/scale/grow** are the domain-agnostic verbs a profile lifts. Depth over breadth — a shallow profile is worse than none.
 
 ## TL;DR — four rules (highest priority)
 1. **Solo by default.** Only fan out when the GATE below passes.
