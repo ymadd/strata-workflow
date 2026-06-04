@@ -13,7 +13,7 @@ Workflow({
     grounded: false,                             // true → sides cite web sources via WebSearch/WebFetch
     constraints: "<context the debaters must respect>",
     cap: 150000,                                 // or a bare maxAgents to cap by agent count
-    tierHint: "hard"                             // promote arguing to opus when the stakes are very high
+    tierHint: "hard"                             // promote BOTH argue + rebut to opus when stakes are very high (ablation: the lift comes from opus on the rebuttal step)
   }
 })
 ```

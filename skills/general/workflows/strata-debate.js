@@ -39,7 +39,15 @@ const AGENT_ROOF = 40
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // argue/rebut = sonnet (DRAFT). judge/synth = opus (the value of a debate IS the judgment).
 const TIER = { argue: 'sonnet', rebut: 'sonnet', judge: 'opus', synth: 'opus' }
-if (A.tierHint === 'hard') TIER.argue = 'opus' // spend opus on the arguments when the stakes are very high
+// hard = spend opus on the arguments when the stakes are very high. Promote BOTH argue AND rebut:
+// an ablation (rebut-opus vs all-opus vs all-sonnet, blind-judged) found the discriminating lift —
+// surfacing the unstated crux, decision-usefulness — comes from opus on the judgment-adjacent REBUTTAL
+// step (read the opponent's strongest case, name the assumption it rests on), NOT from opus openings.
+// The prior code promoted only `argue`, withholding opus from the very role that carries the payoff.
+if (A.tierHint === 'hard') {
+  TIER.argue = 'opus'
+  TIER.rebut = 'opus'
+}
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {
