@@ -117,9 +117,9 @@ if (canSpawn()) {
       )}. Identify SYSTEMIC issues (patterns across many units — e.g. a whole visual style or component-type that consistently fails or looks identical), give an overall letter grade with one sentence, name the worst categories, and produce regenerateIds = the ids worth regenerating (broken/low + clear dups; cap ~80, prioritise the worst).`,
       { label: 'critic', phase: 'Critic', model: 'opus', schema: CRITIC_SCHEMA }
     )
+    if (!critic) throw new Error('critic agent returned null') // route a non-throwing null into the fail-open path (convention parity with every other mode's synthesis)
   } catch (e) {
     log(`critic stage failed (${String(e && e.message ? e.message : e)}); returning per-item data without the systemic critique`)
-    critic = null
   }
 }
 

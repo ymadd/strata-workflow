@@ -182,28 +182,53 @@ for (const alias of ['code', 'finance']) {
   }
 }
 
-// CONTRACT: every domain-profile field must be CONSUMED by the mode(s) it targets — that mode's JS must
-// read `A.<field>`. This catches the "inert preset" drift class (the framing/constraints bug): a profile
-// sets a field the mode never reads, so the preset silently does nothing. Mapping mirrors SKILL.md step 3.
-const PROFILE_FIELD_CONSUMERS = {
-  dimensions: ['focus', 'review', 'sweep'],
-  lenses: ['panel'],
-  axes: ['panel', 'debate'],
-  positions: ['debate'],
-  framing: ['research'],
-  constraints: ['panel', 'debate', 'research'], // modes that READ A.constraints; others get qualityBar via task-text (router-folded)
+// CONTRACT: every preset a domain profile sets must be CONSUMED by the mode it targets — that mode's JS
+// must read `A.<field>`, else the preset is silently INERT (the framing/constraints bug class). The
+// field→mode expectation is DERIVED from the shipped profiles themselves (not a hand-maintained map), so
+// it stays in sync automatically AND catches the reverse drift: a profile adding a field/mode the engine
+// doesn't honor, or a typo'd preset key that would never inject.
+const INJECTABLE_FIELDS = new Set(['dimensions', 'lenses', 'axes', 'positions', 'framing', 'grounded'])
+const fieldConsumers = {} // field -> Set(mode), built from the real profiles
+for (const d of ['finance.md', 'code.md']) {
+  const src = readFile(path.join(DOMAINS_DIR, d))
+  const m = src && src.match(/```json\s*([\s\S]*?)```/)
+  if (!m) continue
+  let prof
+  try {
+    prof = JSON.parse(m[1]) // JSON validity is already asserted above
+  } catch (e) {
+    continue
+  }
+  for (const [mode, preset] of Object.entries(prof)) {
+    if (!preset || typeof preset !== 'object' || Array.isArray(preset)) continue // skip qualityBar (string) / pitfalls (array)
+    for (const field of Object.keys(preset)) {
+      if (!INJECTABLE_FIELDS.has(field)) {
+        fail(`contract:unknown-field:${d}:${mode}.${field}`, `profile sets an unrecognized preset key '${field}' under ${mode} — it will never inject (typo? expected one of ${[...INJECTABLE_FIELDS].join('/')})`)
+        continue
+      }
+      if (!fieldConsumers[field]) fieldConsumers[field] = new Set()
+      fieldConsumers[field].add(mode)
+    }
+  }
 }
-for (const [field, modes] of Object.entries(PROFILE_FIELD_CONSUMERS)) {
+// qualityBar/pitfalls are top-level (not per-mode) and route to `constraints`; assert that contract explicitly.
+if (!fieldConsumers.constraints) fieldConsumers.constraints = new Set()
+for (const mode of ['panel', 'debate', 'research']) fieldConsumers.constraints.add(mode)
+
+const _modeSrc = {} // read each mode file at most once
+const readMode = (mode) => (mode in _modeSrc ? _modeSrc[mode] : (_modeSrc[mode] = readFile(path.join(WORKFLOWS_DIR, `strata-${mode}.js`))))
+for (const [field, modes] of Object.entries(fieldConsumers)) {
+  const re = new RegExp(`A\\.${field}\\b`) // depends only on field, not mode — build once per field
   for (const mode of modes) {
-    const src = readFile(path.join(WORKFLOWS_DIR, `strata-${mode}.js`))
+    const src = readMode(mode)
     if (!src) {
       fail(`contract:${field}->${mode}`, `strata-${mode}.js unreadable`)
       continue
     }
-    if (new RegExp(`A\\.${field}\\b`).test(src)) {
+    if (re.test(src)) {
       pass(`contract:${field}->${mode}`, `strata-${mode}.js reads A.${field}`)
     } else {
-      fail(`contract:${field}->${mode}`, `domain profiles target ${mode} with '${field}' but strata-${mode}.js never reads A.${field} — INERT preset (dead wiring)`)
+      fail(`contract:${field}->${mode}`, `domain profiles set '${field}' for ${mode} but strata-${mode}.js never reads A.${field} — INERT preset (dead wiring)`)
     }
   }
 }
