@@ -117,7 +117,7 @@ if (ADVISE) {
       label: 'advise',
       phase: 'Advise',
       model: ADV_MODEL,
-      schema: { type: 'object', additionalProperties: false, required: ['brief'], properties: { brief: { type: 'string' } } },
+      schema: { type: 'object', additionalProperties: false, required: ['brief'], properties: { brief: { type: 'string', maxLength: 3500 } } },
     }
   )
   advisory = adv && adv.brief ? `\n\n--- EXPERT ADVISORY BRIEF (apply this to reach expert quality) ---\n${adv.brief}\n--- END BRIEF ---` : ''

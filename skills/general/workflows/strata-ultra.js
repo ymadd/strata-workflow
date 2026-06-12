@@ -341,19 +341,29 @@ let artifacts = {}
 for (const b of built) artifacts = { ...artifacts, [b.unitId || 'main']: b.output }
 
 // DYNAMIC ESCALATION #1 — rescue low-confidence units with an opus advice pass, then a sonnet revise.
+// Advice is schema-bounded: opus output bills at the top rate, so the guidance field carries a hard
+// length ceiling and an explicit no-restating rule (the unit content is already in the prompt).
+const ADVICE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['advice'],
+  properties: {
+    advice: { type: 'string', maxLength: 3000, description: 'the concrete fixes and the quality bar the unit is missing — terse; do NOT restate the current output' },
+  },
+}
 for (const b of built) {
   const uid = b.unitId || 'main'
   if (typeof b.selfScore === 'number' && b.selfScore < ADVICE_THRESHOLD && canSpawnDyn()) {
     spawned++
     const advice = await agent(
       `A builder rated its own work ${b.selfScore}/100 for this task:\n${A.task}\n\nUNIT "${uid}" instruction: ${(workUnits.find((u) => u.id === uid) || {}).instruction || '(gap unit)'}\n\nCURRENT OUTPUT:\n${b.output}\n\nGive expert, specific guidance to lift this unit to top quality — the concrete fixes and the bar it is missing. Do not rewrite it yourself.`,
-      { label: `advise:${uid}`, phase: 'Build', model: TIER.advise }
+      { label: `advise:${uid}`, phase: 'Build', model: TIER.advise, schema: ADVICE_SCHEMA }
     )
     if (canSpawnDyn()) {
       spawned++
       adviceEscalations++
       const revised = await agent(
-        `Task:\n${A.task}\n\nRevise UNIT "${uid}" using this expert advice. Return the full improved artifact CONTENT in \`output\`; do not write files.\n\nADVICE:\n${typeof advice === 'string' ? advice : ''}\n\nCURRENT:\n${artifacts[uid]}`,
+        `Task:\n${A.task}\n\nRevise UNIT "${uid}" using this expert advice. Return the full improved artifact CONTENT in \`output\`; do not write files.\n\nADVICE:\n${advice && advice.advice ? advice.advice : ''}\n\nCURRENT:\n${artifacts[uid]}`,
         { label: `revise:${uid}`, phase: 'Build', model: TIER.build, schema: BUILD_SCHEMA }
       )
       if (revised && revised.output) artifacts = { ...artifacts, [uid]: revised.output }
@@ -494,7 +504,7 @@ try {
     `Task:\n${A.task}\n\nUNDERSTANDING:\n${JSON.stringify(mapDigest, null, 2)}\n\n` +
       `CHOSEN APPROACH: ${winner.approach}\n\nBUILT & REPAIRED ARTIFACTS (unitId -> output):\n${JSON.stringify(artifacts, null, 2)}\n\n` +
       `REVIEW HISTORY: ${JSON.stringify(reviewLog)}\n\n` +
-      `Assemble the final deliverable for the task. Be a completeness critic: state what is fully done vs still missing, and note any gaps the agent budget forced.`,
+      `Assemble the final deliverable for the task. Be a completeness critic: in \`completeness\`/\`coverageNote\`, list ONLY the gaps and any budget-forced cuts — do NOT re-describe what the artifacts contain (they are returned verbatim alongside this synthesis).`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open

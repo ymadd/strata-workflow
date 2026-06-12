@@ -10,7 +10,7 @@
 #   1  one or more checks failed (red)
 #
 # Checks:
-#   1. Mode inventory      — 9 scripts + 8 reference docs present
+#   1. Mode inventory      — 12 scripts + 11 reference docs present
 #   2. Syntax guarantee    — every script passes `node --check`
 #   3. Agent-count caps    — documented MAX_AGENTS/HARD_LIMIT/roof constant + gate present per script
 #   4. Model tiering       — opus only on plan/advise/judge/audit/synth; unclassified → sonnet
@@ -45,7 +45,7 @@ echo ""
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CHECK 1: MODE INVENTORY
-# All 9 strata-*.js scripts and 8 reference/*.md docs must be present.
+# All 13 strata-*.js scripts and 12 reference/*.md docs must be present.
 # audit is documented in reference/scale.md, not a separate audit.md.
 # ══════════════════════════════════════════════════════════════════════════════
 echo "── 1. Mode Inventory ──────────────────────────────────────────────────"
@@ -54,12 +54,14 @@ REQUIRED_SCRIPTS=(
   strata-focus.js strata-review.js strata-sweep.js strata-panel.js
   strata-scale.js strata-grow.js   strata-ultra.js strata-evolve.js
   strata-debate.js strata-research.js
+  strata-delegate.js strata-conduct.js
   strata-audit.js
 )
 REQUIRED_REFS=(
   focus.md review.md sweep.md panel.md
   scale.md grow.md  ultra.md evolve.md
   debate.md research.md
+  delegate.md conduct.md
 )
 
 for s in "${REQUIRED_SCRIPTS[@]}"; do
@@ -320,6 +322,22 @@ if grep -qE "AGENT_ROOF\s*=\s*[0-9]+" "$F"; then
   fi
 fi
 
+# delegate — AGENT_ROOF=24 (depth-not-breadth), HARD_LIMIT=950, canSpawn gate + apex literal caps
+F="${WF}/strata-delegate.js"
+grep_require "$F" "AGENT_ROOF\s*=\s*24"     "delegate: AGENT_ROOF=24 present"
+grep_require "$F" "HARD_LIMIT\s*=\s*950"    "delegate: HARD_LIMIT=950 present"
+grep_require "$F" "canSpawn\s*=\s*\(\)"      "delegate: canSpawn() gate defined"
+grep_require "$F" "canSpawn\(\)"             "delegate: canSpawn() called at agent site"
+grep_require "$F" "MAX_UNITS\s*=\s*6"        "delegate: MAX_UNITS=6 unit truncation present"
+
+# conduct — AGENT_ROOF=120 (fan-out, scale-y family), HARD_LIMIT=950, canSpawn gate + unit truncation
+F="${WF}/strata-conduct.js"
+grep_require "$F" "AGENT_ROOF\s*=\s*120"    "conduct: AGENT_ROOF=120 present"
+grep_require "$F" "HARD_LIMIT\s*=\s*950"    "conduct: HARD_LIMIT=950 present"
+grep_require "$F" "canSpawn\s*=\s*\(\)"      "conduct: canSpawn() gate defined"
+grep_require "$F" "canSpawn\(\)"             "conduct: canSpawn() called at agent site"
+grep_require "$F" "MAX_UNITS\s*=\s*12"       "conduct: MAX_UNITS=12 unit truncation present"
+
 # audit — HARD_LIMIT=950, spawned counter, canSpawn() guards pipeline (ADOPTED IDEA gap closed)
 F="${WF}/strata-audit.js"
 grep_require "$F" "HARD_LIMIT\s*=\s*950"    "audit: HARD_LIMIT=950 present"
@@ -433,6 +451,50 @@ fi
 F="${WF}/strata-audit.js"
 grep_require "$F" "AUDIT_MODEL\s*=.*'opus'"  "audit: AUDIT_MODEL defaults to opus (audit role)"
 grep_require "$F" "model:\s*'opus'"           "audit: critic uses opus"
+
+# delegate: named model constants; fable confined to APEX lines; dataSensitive forces apex→opus
+F="${WF}/strata-delegate.js"
+grep_require "$F" "EXEC_MODEL\s*="            "delegate: EXEC_MODEL constant present"
+if grep -E "const\s+EXEC_MODEL\s*=" "$F" | grep -qE "'(fable|haiku)'"; then
+  FAIL "delegate: EXEC_MODEL routes to fable/haiku — builder must be opus|sonnet"
+else
+  PASS "delegate: EXEC_MODEL is opus|sonnet (documented single-task exception)"
+fi
+grep_require "$F" "VERIFY_MODEL\s*=\s*'sonnet'" "delegate: VERIFY_MODEL=sonnet"
+grep_require "$F" "A\.dataSensitive\s*===\s*true\s*\?\s*'opus'" "delegate: dataSensitive forces apex to opus"
+grep_require "$F" "APEX_ADVISE_PER_UNIT\s*=\s*1" "delegate: APEX_ADVISE_PER_UNIT=1 literal cap"
+grep_require "$F" "APEX_BUILD_PER_UNIT\s*=\s*1"  "delegate: APEX_BUILD_PER_UNIT=1 literal cap"
+if grep "'fable'" "$F" | grep -v "APEX" | grep -q .; then
+  FAIL "delegate: 'fable' literal found outside APEX lines"
+else
+  PASS "delegate: fable confined to APEX lines"
+fi
+# conduct: named model constants; fable confined to ORCH lines; orchestrator + ladder literal caps
+F="${WF}/strata-conduct.js"
+grep_require "$F" "EXEC_DEFAULT\s*=\s*'sonnet'" "conduct: EXEC_DEFAULT=sonnet (bulk unit builder)"
+grep_require "$F" "OPUS_UNIT_CAP"              "conduct: OPUS_UNIT_CAP minority bound on opus units"
+grep_require "$F" "A\.dataSensitive\s*===\s*true\s*\?\s*'opus'" "conduct: dataSensitive forces orchestrator to opus"
+grep_require "$F" "ORCH_PLAN_MAX\s*=\s*1"      "conduct: ORCH_PLAN_MAX=1 literal cap"
+grep_require "$F" "ORCH_REVIEW_MAX\s*=\s*1"    "conduct: ORCH_REVIEW_MAX=1 literal cap"
+grep_require "$F" "DIAG_PER_UNIT\s*=\s*1"      "conduct: DIAG_PER_UNIT=1 literal cap"
+grep_require "$F" "REBUILD_PER_UNIT\s*=\s*1"   "conduct: REBUILD_PER_UNIT=1 literal cap"
+grep_require "$F" "REBUILD_MODEL\s*=\s*'opus'" "conduct: escalation ladder tops out at opus (never the apex)"
+if grep "'fable'" "$F" | grep -v "ORCH" | grep -q .; then
+  FAIL "conduct: 'fable' literal found outside ORCH lines"
+else
+  PASS "conduct: fable confined to ORCH lines"
+fi
+# fable must not leak into any OTHER mode (delegate=APEX and conduct=ORCH are the only two surfaces)
+fable_leak=0
+for other in "${WF}"/strata-*.js; do
+  [[ "$(basename "$other")" == "strata-delegate.js" ]] && continue
+  [[ "$(basename "$other")" == "strata-conduct.js" ]] && continue
+  if grep -q "'fable'" "$other"; then
+    FAIL "$(basename "$other"): 'fable' literal found — apex tier is confined to delegate (APEX) / conduct (ORCH)"
+    fable_leak=1
+  fi
+done
+[[ "$fable_leak" -eq 0 ]] && PASS "fable containment: no other mode references the apex tier"
 
 echo ""
 

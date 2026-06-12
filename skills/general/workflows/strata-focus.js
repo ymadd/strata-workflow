@@ -140,9 +140,9 @@ const SYNTH_SCHEMA = {
   additionalProperties: false,
   required: ['answer'],
   properties: {
-    answer: { type: 'string' },
+    answer: { type: 'string', maxLength: 8000 },
     residualRisks: { type: 'array', items: { type: 'string' } },
-    coverageNote: { type: 'string' },
+    coverageNote: { type: 'string', maxLength: 2000 },
   },
 }
 

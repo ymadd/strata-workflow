@@ -209,10 +209,10 @@ const SYNTH_SCHEMA = {
   required: ['healthGrade', 'summary', 'report', 'coverageNote'],
   properties: {
     healthGrade: { type: 'string', enum: ['A', 'B', 'C', 'D', 'F'], description: 'overall codebase health from this sweep' },
-    summary: { type: 'string', description: 'a few sentences: the headline state of the codebase and its biggest risks' },
-    report: { type: 'string', description: 'the full review, grouped by severity AND by theme; per-unit issues plus the systemic findings, each with file:line and a fix' },
+    summary: { type: 'string', maxLength: 1500, description: 'a few sentences: the headline state of the codebase and its biggest risks' },
+    report: { type: 'string', maxLength: 12000, description: 'the review grouped by severity AND by theme; reference each finding as "file:line — issue — one-line fix". Do NOT restate evidence/rationale text — the full findings are returned as data alongside this report' },
     topRisks: { type: 'array', items: { type: 'string' }, description: 'the ranked must-address items, each "file:line — issue" or "theme — issue"' },
-    coverageNote: { type: 'string', description: 'HONEST coverage: how many units existed, how many were deep-reviewed, which were skipped by the agent budget, and what verification depth was applied' },
+    coverageNote: { type: 'string', maxLength: 2000, description: 'HONEST coverage: how many units existed, how many were deep-reviewed, which were skipped by the agent budget, and what verification depth was applied' },
   },
 }
 
@@ -400,7 +400,7 @@ try {
       `\nCONFIRMED PER-UNIT FINDINGS (severity-sorted; raisedBy>1 = multiple sites/lenses):\n${JSON.stringify(confirmed, null, 2)}\n\n` +
       `SYSTEMIC / CROSS-CUTTING FINDINGS:\n${JSON.stringify(systemicFindings, null, 2)}\n\n` +
       `COVERAGE FACTS (state these plainly in coverageNote — what was reviewed vs deferred by the agent budget, and the verification depth):\n${JSON.stringify(coverageFacts, null, 2)}\n\n` +
-      `Write the report: healthGrade A-F; a grouped report (by severity AND theme) combining per-unit and systemic issues, each with file:line and a fix; topRisks ranked; and a coverageNote that does NOT overstate completeness. If deferred units look high-risk, say a follow-up sweep is needed.`,
+      `Write the report: healthGrade A-F; a grouped report (by severity AND theme) combining per-unit and systemic issues, each as "file:line — issue — one-line fix" (do NOT restate evidence or rationale text — the confirmed findings are returned verbatim as data alongside this report); topRisks ranked; and a coverageNote that does NOT overstate completeness. If deferred units look high-risk, say a follow-up sweep is needed.`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open

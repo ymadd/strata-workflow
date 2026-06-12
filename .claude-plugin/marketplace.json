@@ -21,7 +21,7 @@
         "model-tiering",
         "ultracode"
       ],
-      "description": "Built on dynamic Workflows + ultracode — structured multi-agent fan-out (focus / review / sweep / panel / debate / research / scale / grow / ultra / evolve + audit) that caps agent count and reserves opus for a thin plan/advise/judge/audit layer. Same orchestration power, a fraction of the token burn."
+      "description": "Built on dynamic Workflows + ultracode — structured multi-agent fan-out (focus / review / sweep / panel / debate / research / scale / grow / ultra / evolve / delegate / conduct + audit) that caps agent count, reserves opus for a thin plan/advise/judge/audit layer, and spend-gates the fable apex behind delegate's escalation ladder and conduct's two orchestration endpoints. Same orchestration power, a fraction of the token burn."
     }
   ]
 }

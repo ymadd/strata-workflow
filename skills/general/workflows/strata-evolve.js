@@ -539,7 +539,7 @@ try {
       `PHASES RUN: ${phasesRun}\nEVOLUTION:\n${evolution.join('\n')}\n\n` +
       `FILES TOUCHED: ${[...new Set(artifacts.flatMap((a) => a.filesWritten || []))].slice(0, 80).join(', ')}\n` +
       `PM FINAL: goalMet=${pmFinal.goalMet}, residual=${JSON.stringify(pmFinal.residual || [])}\n\n` +
-      `Write deliverableSummary (incl. how to run/use it), a healthGrade A-F, the evolutionLog, openItems, and an honest coverageNote about anything the budget left unfinished.`,
+      `Write deliverableSummary (incl. how to run/use it), a healthGrade A-F, the evolutionLog, openItems, and an honest coverageNote about anything the budget left unfinished. Keep deliverableSummary tight — what was built and how to use it; do NOT restate the workers' phase summaries or file contents (the files ARE the deliverable).`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null')

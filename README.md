@@ -29,9 +29,11 @@ Fan-out is powerful but easy to overdo: a panel of opus agents on every task bur
 | **grow** | `strata-grow.js` | A self-improving generation loop that grows toward a cap or a goal, auto-generating rounds (Plan → Build → Audit → Repair). | plan + advise + audit |
 | **ultra** | `strata-ultra.js` | ONE substantial task taken end-to-end: understand → design → build → review → synthesize. ultracode's full arc that *dynamically* spawns agents where needed (opus advice / tie-breaks / completeness-grown units). Capped, or `unleashed`. | judge + advice + tie-break + critic + synthesize |
 | **evolve** | `strata-evolve.js` | Autonomous, self-propagating development toward a vision: a **PM** (opus) owns the goal + ideation, a **Director** (opus) grows an EMERGENT phase plan and SUBDIVIDES important phases (spawning more agents) until the PM judges it done. Writes real files. | PM + Director + ideation + synthesize |
+| **delegate** | `strata-delegate.js` | ONE heavy task handed off end-to-end, cheap-first: build → verify per unit (≤6 sequential units), escalating to the **fable apex** only on evidence of failure (2 attempts → diagnosis-only advise → clean-slate rebuild; ≤1 advise + ≤1 rebuild per unit). `dataSensitive: true` forces the apex to opus. | execution (opus) + spend-gated fable apex |
+| **conduct** | `strata-conduct.js` | A task that SPLITS into file-disjoint units you want executed in parallel under one conductor: haiku scouts → **fable** emits ONE instruction packet (sonnet bulk, opus for the hard minority — ≤1/3, enforced) → parallel groups with a per-unit ladder (retry → opus diagnose → opus rebuild) → ONE fable integration review. Fable never executes a unit. `dataSensitive: true` forces the orchestrator to opus. | escalation ladder (diagnose/rebuild) + spend-gated fable orchestrator |
 | _audit_ | `strata-audit.js` | A thin opus oversight layer that grades a large generated batch and returns systemic issues + a regenerate list. | grading + meta-critique |
 
-**Shared DNA:** focus = few done smartly · review = one change scrutinized to a verdict · sweep = the whole codebase reviewed at scale · panel = many proposed, one chosen · debate = one claim stress-tested adversarially · research = hypotheses framed, tested, refuted · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped · evolve = an autonomous build that grows its own phase plan. `panel` *decides*; `debate` *stress-tests a claim*; `research` *tests hypotheses*; `scale`/`grow` *build*; `review` *judges a change*; `sweep` *audits the codebase*; `ultra`/`evolve` *do the most the cap allows* (ultra on a fixed arc, evolve on an emergent one). `focus` does the least. **review/sweep are coding-specialized; debate/panel/research/scale/grow are domain-agnostic** (finance, strategy, analytics, R&D). (focus vs review: *unknown surface, cheap haiku exploration* vs *known change, deep sonnet scrutiny + dedup + verdict*.)
+**Shared DNA:** focus = few done smartly · review = one change scrutinized to a verdict · sweep = the whole codebase reviewed at scale · panel = many proposed, one chosen · debate = one claim stress-tested adversarially · research = hypotheses framed, tested, refuted · scale = many done cheaply · grow = many grown cheaply while self-improving · ultra = one task done exhaustively, capped · evolve = an autonomous build that grows its own phase plan · delegate = one heavy task done cheap-first, escalating to the fable apex only on failure · conduct = delegate's breadth twin: fable conducts (one packet, one review) while sonnet/opus execute disjoint units in parallel. `panel` *decides*; `debate` *stress-tests a claim*; `research` *tests hypotheses*; `scale`/`grow` *build*; `review` *judges a change*; `sweep` *audits the codebase*; `ultra`/`evolve` *do the most the cap allows* (ultra on a fixed arc, evolve on an emergent one); `delegate` *hands one task off with a spend-gated escalation ladder*; `conduct` *fans one task out under a spend-gated conductor*. `focus` does the least. **review/sweep/delegate/conduct are coding-specialized; debate/panel/research/scale/grow are domain-agnostic** (finance, strategy, analytics, R&D). (focus vs review: *unknown surface, cheap haiku exploration* vs *known change, deep sonnet scrutiny + dedup + verdict*.)
 
 ## Domain profiles
 
@@ -42,7 +44,7 @@ Modes are **verbs** (decide, judge, test); domains are **contexts** (finance, ma
 → debate runs with positions = [bull, bear, base], finance axes, and a finance quality-bar
 ```
 
-- **Invocation** is order-independent: each leading token self-identifies as a mode / domain / cap, so `debate finance 300k` and `300k finance debate` parse the same (no positional hazard). Mode defaults to `focus`; bare `/strata-workflow` prints the mode menu.
+- **Invocation** is order-independent: each leading token self-identifies as a mode / domain / cap, so `debate finance 300k` and `300k finance debate` parse the same (no positional hazard). No mode token = the router **auto-routes** from the task itself (GATE-gated, announced with a reason before running, never auto-picks `evolve`, falls back to `focus` when unsure); bare `/strata-workflow` prints the mode menu.
 - Profiles live in `skills/general/reference/domains/<domain>.md` as a JSON preset block; the router merges the entry for the chosen mode into args (`dimensions`/`axes`/`lenses`/`positions`/`framing`; `qualityBar`+`pitfalls` → `constraints` for panel/debate/research, else prepended to the `task` text). **Caller args > domain preset > mode defaults.** Adding a domain = dropping one md file (copy `reference/domains/_TEMPLATE.md`). Shipped: **code**, **finance**, **security**.
 - **Thin alias commands:** `strata-workflow:finance` and `strata-workflow:code` are tiny launcher skills that fix the domain and delegate to the **same** bundled workflows — no duplicated JS, the caps/tiering/verify guarantees stay in one place. They give per-domain command ergonomics without fragmenting the engine.
 - Per-mode cap/tier constants are intentionally non-uniform; the common baseline vs the overrides are catalogued in `reference/tiering-constants.md`.
@@ -54,6 +56,7 @@ Every `agent()` call declares a model; implicit "inherit the big model" is treat
 - **FIND / EXTRACT / FORMAT / CLASSIFY → haiku**
 - **TRACE / WRITE-CODE / VOTE / DRAFT / REVISE → sonnet**
 - **SYNTHESIZE / JUDGE / ROOT-CAUSE / PLAN / ADVISE / AUDIT → opus** (a few stages per run)
+- **ESCALATED DIAGNOSIS / CLEAN-SLATE REBUILD → fable** (`delegate` mode — spend-gated to ≤1 advise + ≤1 rebuild per unit) / **CONDUCT: PACKET + INTEGRATION REVIEW → fable** (`conduct` mode — ≤1 plan + ≤1 review per run, never a unit executor). The only two fable surfaces; `dataSensitive` forces opus on both.
 
 A bigger token budget buys *more agents*, never a bigger per-agent model.
 
@@ -118,7 +121,10 @@ strata-workflow/                    # repo root — also its own plugin + market
 │       ├── SKILL.md                # lean router: the gate, cap math, tiering rules (small, always-loaded)
 │       ├── reference/              # per-mode call signatures — read on demand, not into context
 │       │   ├── focus.md   review.md   sweep.md    panel.md
-│       │   ├── scale.md   grow.md     ultra.md    evolve.md
+│       │   ├── debate.md  research.md scale.md    grow.md
+│       │   ├── ultra.md   evolve.md   delegate.md conduct.md
+│       │   ├── tiering-constants.md  # per-mode cap/tier catalogue (baseline vs overrides)
+│       │   └── domains/            # domain profiles (code / finance / security + template)
 │       └── workflows/
 │           ├── strata-focus.js     # find → verify → synthesize
 │           ├── strata-review.js    # code review of a change: dimension reviewers → dedup → refute → verdict
@@ -130,6 +136,8 @@ strata-workflow/                    # repo root — also its own plugin + market
 │           ├── strata-grow.js      # self-improving / goal-driven progressive loop
 │           ├── strata-ultra.js     # full task arc: understand → design → build → review → synthesize
 │           ├── strata-evolve.js    # autonomous self-propagating dev: PM + Director grow an emergent phase plan
+│           ├── strata-delegate.js  # one heavy task, cheap-first: build → verify → spend-gated fable apex
+│           ├── strata-conduct.js   # fable-conducted fan-out: 1 packet → parallel units → 1 review
 │           └── strata-audit.js     # opus oversight: grade a batch, return systemic issues
 ├── README.md                       # this file
 └── LICENSE

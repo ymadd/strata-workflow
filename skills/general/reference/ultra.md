@@ -2,6 +2,8 @@
 
 For taking ONE substantial task end-to-end with maximum rigor. Runs ultracode's full arc — **understand → design → build → review → synthesize** — and **DYNAMICALLY spawns more agents where the work needs them** (not a fixed pipeline). Still bounded: a hard agent-count cap, and opus spawned only where judgment is needed. The deliberate opposite of `focus`: where focus does the least, ultra does the most the budget allows.
 
+**ultra vs conduct:** ultra when the WHAT itself needs exploring (design alternatives, an open-ended deliverable, completeness-grown units); `conduct` when the what is clear and the work splits into file-disjoint units to execute in parallel under the fable conductor.
+
 ```js
 Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-ultra.js", args: {
   task: "<the one substantial task>",

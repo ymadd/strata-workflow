@@ -208,8 +208,8 @@ const SYNTH_SCHEMA = {
   additionalProperties: false,
   required: ['conclusion', 'reasoning', 'confidence'],
   properties: {
-    conclusion: { type: 'string', description: 'the integrated, reasoned verdict — not winner-take-all' },
-    reasoning: { type: 'string', description: 'how the surviving points combine to support the conclusion' },
+    conclusion: { type: 'string', maxLength: 6000, description: 'the integrated, reasoned verdict — not winner-take-all' },
+    reasoning: { type: 'string', maxLength: 6000, description: 'how the surviving points combine to support the conclusion — cite points concisely, do NOT reproduce full argument texts' },
     survivingPoints: { type: 'array', items: { type: 'string' } },
     cruxes: { type: 'array', items: { type: 'string' }, description: 'what stays unresolved and would change the verdict' },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },

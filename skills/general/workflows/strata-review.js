@@ -180,10 +180,10 @@ const SYNTH_SCHEMA = {
   required: ['verdict', 'summary', 'report'],
   properties: {
     verdict: { type: 'string', enum: ['approve', 'comment', 'request-changes'], description: 'approve = nothing blocking; request-changes = >=1 confirmed CRITICAL/HIGH' },
-    summary: { type: 'string', description: 'a few sentences: overall health of the change and the headline issues' },
-    report: { type: 'string', description: 'the full review, grouped by severity, each item with file:line, the problem, and the fix' },
+    summary: { type: 'string', maxLength: 1500, description: 'a few sentences: overall health of the change and the headline issues' },
+    report: { type: 'string', maxLength: 12000, description: 'the full review, grouped by severity, each item with file:line, the problem, and the fix — do NOT quote the diff or restate finding evidence at length' },
     blocking: { type: 'array', items: { type: 'string' }, description: 'the must-fix items (confirmed CRITICAL/HIGH), each as "file:line — issue"' },
-    coverageNote: { type: 'string', description: 'what was NOT reviewed (dimensions/files skipped by the agent budget) — be honest' },
+    coverageNote: { type: 'string', maxLength: 2000, description: 'what was NOT reviewed (dimensions/files skipped by the agent budget) — be honest' },
   },
 }
 

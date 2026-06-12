@@ -124,8 +124,8 @@ const DIVERGE_SCHEMA = {
   additionalProperties: false,
   required: ['approach', 'rationale', 'keyIdeas', 'tradeoffs'],
   properties: {
-    approach: { type: 'string', description: 'the design/proposal itself — concrete and self-contained' },
-    rationale: { type: 'string', description: 'why this approach, given the assigned lens' },
+    approach: { type: 'string', maxLength: 10000, description: 'the design/proposal itself — concrete and self-contained' },
+    rationale: { type: 'string', maxLength: 3000, description: 'why this approach, given the assigned lens' },
     keyIdeas: { type: 'array', items: { type: 'string' }, description: 'the distinctive, transplantable ideas in this approach' },
     tradeoffs: { type: 'array', items: { type: 'string' } },
     risks: { type: 'array', items: { type: 'string' } },
@@ -160,7 +160,7 @@ const JUDGE_SCHEMA = {
       },
     },
     winnerIndex: { type: 'integer' },
-    rationale: { type: 'string', description: 'why the winner wins, and which runner-up ideas are worth grafting' },
+    rationale: { type: 'string', maxLength: 4000, description: 'why the winner wins, and which runner-up ideas are worth grafting — do NOT restate the contenders' },
   },
 }
 const SYNTH_SCHEMA = {
@@ -168,7 +168,7 @@ const SYNTH_SCHEMA = {
   additionalProperties: false,
   required: ['finalDesign', 'basedOnIndex', 'rationale'],
   properties: {
-    finalDesign: { type: 'string', description: 'the chosen design, refined and self-contained — ready to hand to implementation' },
+    finalDesign: { type: 'string', maxLength: 12000, description: 'the chosen design, refined and self-contained — ready to hand to implementation' },
     basedOnIndex: { type: 'integer', description: 'the winning contender this is built on' },
     graftedFrom: {
       type: 'array',
@@ -180,13 +180,22 @@ const SYNTH_SCHEMA = {
       },
       description: 'the best ideas pulled from the runners-up',
     },
-    rationale: { type: 'string' },
+    rationale: { type: 'string', maxLength: 3000 },
     openQuestions: { type: 'array', items: { type: 'string' } },
     implementationOutline: { type: 'array', items: { type: 'string' }, description: 'ordered next steps to build it' },
   },
 }
 
 // ---- Phase 0: ADVISE — one opus brief injected into every contender (amortized over N) ----
+// Schema-bounded: opus prose bills at the top rate, so the "<300 words" ask is backed by a hard ceiling.
+const BRIEF_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['brief'],
+  properties: {
+    brief: { type: 'string', maxLength: 2500, description: 'the tight tournament brief (<300 words) — the bar, the pitfalls, the judging criteria; no solution' },
+  },
+}
 let brief = ''
 if (ADVISE && canSpawn()) {
   phase('Advise')
@@ -197,9 +206,9 @@ if (ADVISE && canSpawn()) {
         `PROBLEM:\n${PROBLEM}\n` +
         (CONSTRAINTS ? `\nHARD CONSTRAINTS:\n${CONSTRAINTS}\n` : '') +
         `\nWrite a tight brief (<300 words) that lifts every designer toward expert level: the real quality bar, the non-obvious pitfalls, the criteria that separate a great answer from a mediocre one (the panel will judge on: ${AXES.join('; ')}), and any domain best-practices they must respect. Do NOT propose a solution yourself — only the bar.`,
-      { label: 'advise', phase: 'Advise', model: TIER.advise }
+      { label: 'advise', phase: 'Advise', model: TIER.advise, schema: BRIEF_SCHEMA }
     )
-    brief = typeof adv === 'string' ? adv : ''
+    brief = adv && adv.brief ? adv.brief : ''
   } catch (e) {
     brief = ''
   }

@@ -51,7 +51,7 @@ const ITEM = {
     ok: { type: 'boolean' },
     broken: { type: 'boolean' },
     dup: { type: 'boolean' },
-    issue: { type: 'string', description: '<=12 words; empty if fine' },
+    issue: { type: 'string', maxLength: 120, description: '<=12 words; empty if fine' },
   },
 }
 const BATCH_SCHEMA = {
@@ -98,7 +98,7 @@ const CRITIC_SCHEMA = {
   additionalProperties: false,
   required: ['systemicIssues', 'overallGrade', 'regenerateIds'],
   properties: {
-    systemicIssues: { type: 'array', items: { type: 'string' } },
+    systemicIssues: { type: 'array', items: { type: 'string', maxLength: 300 } },
     worstCategories: { type: 'array', items: { type: 'string' } },
     overallGrade: { type: 'string' },
     regenerateIds: { type: 'array', items: { type: 'string' } },

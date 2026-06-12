@@ -107,7 +107,7 @@ const ADVICE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['advice'],
-  properties: { advice: { type: 'string', description: 'concise, concrete, actionable expert guidance (<=180 words)' } },
+  properties: { advice: { type: 'string', maxLength: 1500, description: 'concise, concrete, actionable expert guidance (<=180 words)' } },
 }
 const PLAN_SCHEMA = {
   type: 'object',

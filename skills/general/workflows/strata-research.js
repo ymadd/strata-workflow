@@ -166,16 +166,16 @@ const SYNTH_SCHEMA = {
   additionalProperties: false,
   required: ['conclusion', 'confidence', 'reasoning'],
   properties: {
-    conclusion: { type: 'string', description: 'the integrated answer to the research question' },
+    conclusion: { type: 'string', maxLength: 6000, description: 'the integrated answer to the research question' },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-    reasoning: { type: 'string', description: 'how the surviving findings combine to support the conclusion' },
+    reasoning: { type: 'string', maxLength: 5000, description: 'how the surviving findings combine to support the conclusion — cite findings, do NOT restate them in full' },
     keyFindings: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['finding'],
-        properties: { finding: { type: 'string' }, citations: { type: 'array', items: { type: 'string' } } },
+        properties: { finding: { type: 'string', maxLength: 1500 }, citations: { type: 'array', items: { type: 'string' } } },
       },
     },
     openQuestions: { type: 'array', items: { type: 'string' } },

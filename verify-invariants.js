@@ -3,7 +3,7 @@
  * verify-invariants.js — Strata Workflow invariant verifier ("audit-the-auditor")
  *
  * Mechanically asserts every charter guarantee:
- *   1. Mode inventory   — all 9 strata-*.js and 8 reference/*.md present
+ *   1. Mode inventory   — all 13 strata-*.js and 13 reference/*.md present
  *   2. Syntax           — every workflow script passes node --check (module-aware wrapper)
  *   3. Agent cap        — each script contains its documented MAX_AGENTS/roof constant
  *                         and a gate guarding every agent() call; no roof above its ceiling
@@ -95,6 +95,8 @@ const EXPECTED_WORKFLOWS = [
   'strata-evolve.js',
   'strata-debate.js',
   'strata-research.js',
+  'strata-delegate.js',
+  'strata-conduct.js',
   'strata-audit.js',
 ]
 
@@ -109,6 +111,8 @@ const EXPECTED_REFERENCES = [
   'evolve.md',
   'debate.md',
   'research.md',
+  'delegate.md',
+  'conduct.md',
   'tiering-constants.md',
 ]
 
@@ -371,6 +375,26 @@ const CAP_RULES = {
     hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
     hard_limit_max: 950,
     gate_fn: 'canExplore',
+  },
+  // strata-delegate.js: execution mode with a frontier apex — small roof (24) because it is
+  // depth-not-breadth (≤6 sequential units × a short escalation ladder, never a fan-out).
+  'strata-delegate.js': {
+    must_contain: ['MAX_AGENTS', 'canSpawn', 'AGENT_ROOF', 'HARD_LIMIT'],
+    roof_pattern: /AGENT_ROOF\s*=\s*(\d+)/,
+    roof_max: 24,
+    hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
+    hard_limit_max: 950,
+    gate_fn: 'canSpawn',
+  },
+  // strata-conduct.js: fan-out execution conducted by the apex tier — scale-y roof (120) because
+  // file-disjoint unit groups run in parallel (breadth, vs delegate's depth).
+  'strata-conduct.js': {
+    must_contain: ['MAX_AGENTS', 'canSpawn', 'AGENT_ROOF', 'HARD_LIMIT'],
+    roof_pattern: /AGENT_ROOF\s*=\s*(\d+)/,
+    roof_max: 120,
+    hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
+    hard_limit_max: 950,
+    gate_fn: 'canSpawn',
   },
   // strata-audit.js: charter ADOPTED IDEA — literal agent-count cap added: HARD_LIMIT + canSpawn()
   // nBatches is truncated to HARD_LIMIT-1 before the pipeline; the critic is also gated.
@@ -698,6 +722,94 @@ for (const wf of EXPECTED_WORKFLOWS) {
     continue
   }
 
+  if (wf === 'strata-delegate.js') {
+    // delegate is the EXECUTION mode with a frontier apex (see delegation-spec.md). It uses
+    // named model constants, not a TIER map. Charter rules asserted here:
+    //   (a) EXEC_MODEL (the single-task builder) is opus|sonnet — never the apex tier, never haiku.
+    //       (opus as a builder is a DOCUMENTED exception: ≤6 sequential units, not bulk fan-out.)
+    //   (b) VERIFY_MODEL is sonnet (cheap adversarial gate; tests are the ground truth).
+    //   (c) APEX_MODEL: dataSensitive===true must force it to opus (Mythos-class retention).
+    //   (d) the apex is spend-gated by literal constants: APEX_ADVISE_PER_UNIT=1, APEX_BUILD_PER_UNIT=1.
+    //   (e) the 'fable' literal appears ONLY on APEX-prefixed lines — no bulk role can adopt it.
+    const execLine = src.match(/const\s+EXEC_MODEL\s*=[^\n]+/)
+    if (execLine && !execLine[0].includes("'fable'") && !execLine[0].includes("'haiku'")) {
+      pass(`tier:${wf}:exec-not-apex`, 'EXEC_MODEL is opus|sonnet (never the apex tier, never haiku)')
+    } else {
+      fail(`tier:${wf}:exec-not-apex`, `EXEC_MODEL missing or routes to apex/haiku: ${execLine ? execLine[0].trim() : 'not found'}`)
+    }
+    if (/const\s+VERIFY_MODEL\s*=\s*'sonnet'/.test(src)) {
+      pass(`tier:${wf}:verify-is-sonnet`, 'VERIFY_MODEL = sonnet (cheap adversarial gate)')
+    } else {
+      fail(`tier:${wf}:verify-is-sonnet`, "VERIFY_MODEL = 'sonnet' not found")
+    }
+    if (/A\.dataSensitive\s*===\s*true\s*\?\s*'opus'/.test(src)) {
+      pass(`tier:${wf}:data-sensitive-forces-opus`, 'dataSensitive===true forces APEX_MODEL to opus')
+    } else {
+      fail(`tier:${wf}:data-sensitive-forces-opus`, 'dataSensitive→opus forcing not found in APEX_MODEL derivation')
+    }
+    if (/APEX_ADVISE_PER_UNIT\s*=\s*1\b/.test(src) && /APEX_BUILD_PER_UNIT\s*=\s*1\b/.test(src)) {
+      pass(`tier:${wf}:apex-spend-gated`, 'APEX_ADVISE_PER_UNIT=1 and APEX_BUILD_PER_UNIT=1 literal caps present')
+    } else {
+      fail(`tier:${wf}:apex-spend-gated`, 'apex per-unit literal caps (=1) not found')
+    }
+    const rogueFable = src
+      .split('\n')
+      .map((l, i) => ({ l, n: i + 1 }))
+      .filter(({ l }) => l.includes("'fable'") && !/APEX/.test(l))
+    if (rogueFable.length) {
+      fail(`tier:${wf}:fable-confined-to-apex`, `'fable' literal outside APEX lines at line(s) [${rogueFable.map((r) => r.n).join(',')}]`)
+    } else {
+      pass(`tier:${wf}:fable-confined-to-apex`, "'fable' literal appears only on APEX-prefixed lines")
+    }
+    continue
+  }
+
+  if (wf === 'strata-conduct.js') {
+    // conduct is the FAN-OUT execution mode conducted by the apex tier (delegation-spec §3 —
+    // the instruction-packet path). Named model constants, not a TIER map. Charter rules:
+    //   (a) EXEC_DEFAULT (the bulk unit builder) is sonnet — never opus, never the apex, never haiku.
+    //   (b) OPUS_UNIT_CAP bounds packet-promoted opus units to a minority (opus is never the bulk).
+    //   (c) ORCH_MODEL: dataSensitive===true must force it to opus (Mythos-class retention).
+    //   (d) the orchestrator is spend-gated by literal constants: ORCH_PLAN_MAX=1, ORCH_REVIEW_MAX=1,
+    //       and the escalation ladder tops out at opus: DIAG_PER_UNIT=1, REBUILD_PER_UNIT=1.
+    //   (e) the 'fable' literal appears ONLY on ORCH-prefixed lines — no unit/ladder role can adopt it.
+    if (/const\s+EXEC_DEFAULT\s*=\s*'sonnet'/.test(src)) {
+      pass(`tier:${wf}:exec-default-sonnet`, 'EXEC_DEFAULT = sonnet (bulk unit builder is never opus/apex/haiku)')
+    } else {
+      fail(`tier:${wf}:exec-default-sonnet`, "const EXEC_DEFAULT = 'sonnet' not found — bulk tier may have drifted")
+    }
+    if (src.includes('OPUS_UNIT_CAP')) {
+      pass(`tier:${wf}:opus-unit-cap`, 'OPUS_UNIT_CAP minority bound on packet-promoted opus units present')
+    } else {
+      fail(`tier:${wf}:opus-unit-cap`, 'OPUS_UNIT_CAP not found — the packet could route ALL units to opus')
+    }
+    if (/A\.dataSensitive\s*===\s*true\s*\?\s*'opus'/.test(src)) {
+      pass(`tier:${wf}:data-sensitive-forces-opus`, 'dataSensitive===true forces ORCH_MODEL to opus')
+    } else {
+      fail(`tier:${wf}:data-sensitive-forces-opus`, 'dataSensitive→opus forcing not found in ORCH_MODEL derivation')
+    }
+    if (/ORCH_PLAN_MAX\s*=\s*1\b/.test(src) && /ORCH_REVIEW_MAX\s*=\s*1\b/.test(src)) {
+      pass(`tier:${wf}:orch-spend-gated`, 'ORCH_PLAN_MAX=1 and ORCH_REVIEW_MAX=1 literal caps present')
+    } else {
+      fail(`tier:${wf}:orch-spend-gated`, 'orchestrator literal caps (=1) not found')
+    }
+    if (/DIAG_PER_UNIT\s*=\s*1\b/.test(src) && /REBUILD_PER_UNIT\s*=\s*1\b/.test(src) && /REBUILD_MODEL\s*=\s*'opus'/.test(src)) {
+      pass(`tier:${wf}:ladder-tops-at-opus`, 'DIAG_PER_UNIT=1, REBUILD_PER_UNIT=1, REBUILD_MODEL=opus — the ladder never reaches the apex')
+    } else {
+      fail(`tier:${wf}:ladder-tops-at-opus`, 'escalation-ladder literal caps or opus rebuild model not found')
+    }
+    const rogueFableC = src
+      .split('\n')
+      .map((l, i) => ({ l, n: i + 1 }))
+      .filter(({ l }) => l.includes("'fable'") && !/ORCH/.test(l))
+    if (rogueFableC.length) {
+      fail(`tier:${wf}:fable-confined-to-orch`, `'fable' literal outside ORCH lines at line(s) [${rogueFableC.map((r) => r.n).join(',')}]`)
+    } else {
+      pass(`tier:${wf}:fable-confined-to-orch`, "'fable' literal appears only on ORCH-prefixed lines")
+    }
+    continue
+  }
+
   if (!tierMatch) {
     fail(`tier:${wf}:tier-map-exists`, 'TIER = { ... } map not found')
     continue
@@ -741,6 +853,22 @@ for (const wf of EXPECTED_WORKFLOWS) {
     if (VERBOSE) console.log(`  NOTE  tier:${wf}: no opus in TIER map; check hardcoded model refs`)
   }
 
+}
+
+// Global apex-tier containment: 'fable' is allowed in strata-delegate.js (as APEX_MODEL) and
+// strata-conduct.js (as ORCH_MODEL) ONLY — both spend-gated by literal counters and asserted above.
+// Any other mode adopting the apex tier — as a default, a tierHint promotion, or a hardcoded
+// model — silently breaks the cost charter, so assert its absence everywhere else.
+const FABLE_ALLOWED = new Set(['strata-delegate.js', 'strata-conduct.js'])
+for (const wf of EXPECTED_WORKFLOWS) {
+  if (FABLE_ALLOWED.has(wf)) continue
+  const src = readFile(path.join(WORKFLOWS_DIR, wf))
+  if (!src) continue // missing-file already failed in inventory
+  if (src.includes("'fable'")) {
+    fail(`tier:${wf}:no-fable`, "'fable' literal found — the apex tier is confined to delegate (APEX) and conduct (ORCH)")
+  } else {
+    pass(`tier:${wf}:no-fable`, 'no apex-tier literal (fable confined to delegate/conduct)')
+  }
 }
 
 // tierHint='hard' TIER mutation checks: these are documented caller opt-ins that promote specific
