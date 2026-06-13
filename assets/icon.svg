@@ -1,0 +1,28 @@
+<!-- Strata Workflow icon -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Strata Workflow</title>
+  <desc id="desc">Layered strata icon representing model-tiered multi-agent orchestration</desc>
+  <rect x="32" y="32" width="448" height="448" rx="48" fill="#0F172A"/>
+  <defs>
+    <linearGradient id="haiku" x1="80" y1="0" x2="432" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </linearGradient>
+    <linearGradient id="sonnet" x1="104" y1="0" x2="408" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="opus" x1="134" y1="0" x2="378" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A78BFA"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <linearGradient id="fable" x1="176" y1="0" x2="336" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F472B6"/>
+      <stop offset="1" stop-color="#FB923C"/>
+    </linearGradient>
+  </defs>
+  <rect x="80" y="312" width="352" height="104" rx="22" fill="url(#haiku)"/>
+  <rect x="104" y="228" width="304" height="76" rx="19" fill="url(#sonnet)"/>
+  <rect x="134" y="166" width="244" height="50" rx="16" fill="url(#opus)"/>
+  <rect x="176" y="118" width="160" height="30" rx="14" fill="url(#fable)"/>
+</svg>

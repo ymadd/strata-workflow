@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.svg" alt="Strata Workflow" width="120" height="120">
+</p>
+
 # Strata Workflow
 
 A **model-tiered, budget-bounded, multi-mode agent-orchestration skill** for [Claude Code](https://claude.com/claude-code).
