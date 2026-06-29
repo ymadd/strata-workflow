@@ -61,6 +61,8 @@ const EXEC_DEFAULT = 'sonnet' // the bulk unit builder; the packet may promote a
 const VERIFY_MODEL = A.tierHint === 'hard' ? 'opus' : 'sonnet' // hard: spend opus on refutation (same opt-in as review)
 const DIAG_MODEL = 'opus' // escalation advisor — a judgment role, diagnosis only
 const REBUILD_MODEL = 'opus' // escalation executor (documented exception: single failed unit, never bulk)
+// run the sonnet tier on the 1M-context variant at the call boundary (haiku/opus/apex pass through unchanged)
+const longCtx = (m) => (m === 'sonnet' ? 'sonnet[1m]' : m)
 
 // ---- budget reads are BEST-EFFORT (never let the budget API throw) ----
 const spentNow = () => {
@@ -354,7 +356,7 @@ const verifyOnce = async (u, build, label) => {
   spawned++
   return agent(
     `Adversarially verify this unit against its acceptance criteria and DoD. Re-read the changed files; run the relevant tests yourself if runnable. Be skeptical — default to pass=false unless the evidence clearly supports it.\n\nUnit: ${u.title}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nBuilder report: ${JSON.stringify(build)}`,
-    { label, phase: 'Execute', model: VERIFY_MODEL, schema: VERIFY_SCHEMA }
+    { label, phase: 'Execute', model: longCtx(VERIFY_MODEL), schema: VERIFY_SCHEMA }
   )
 }
 
@@ -367,7 +369,7 @@ const runUnit = async (u) => {
     return { id: u.id, title: u.title, status: 'skipped-budget', escalation: 'none' }
   }
 
-  const unitModel = u.tier === 'opus' ? 'opus' : EXEC_DEFAULT
+  const unitModel = longCtx(u.tier === 'opus' ? 'opus' : EXEC_DEFAULT)
   let escalation = 'none'
   let lastBuild = null
   let lastVerify = null

@@ -32,6 +32,8 @@ const AGENT_ROOF = 40
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // scope = haiku (enumerate). review/verify = sonnet (reason about real code). synth = opus (judgment + verdict).
 const TIER = { scope: 'haiku', review: 'sonnet', verify: 'sonnet', synth: 'opus' }
+// run every sonnet-tier agent on the 1M-context variant (the cheap bulk carries the long inputs); haiku/opus untouched
+for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 if (A.tierHint === 'cheap') TIER.review = 'haiku' // shallow pass: drop reviewers to haiku (verify/synth stay as-is)
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on the refutation when correctness is critical
 
@@ -101,6 +103,22 @@ if (A.diff) {
 }
 const TARGET_NOTE = A.target ? `\nWhat this change is meant to do (reviewer context): ${A.target}\n` : ''
 
+// ---- grounding context (NEW): the conversation that produced the change + the project's own conventions ----
+// Both are OPTIONAL and both get injected into every reviewer, the verify refuters, and the synthesis.
+//  • conversation: caller-supplied — subagents CANNOT see the parent session, so the intent/requirements
+//    the change must satisfy have to be passed in. It lets reviewers judge intent-fidelity (missed
+//    requirements, unrequested scope creep), not just diff-level correctness.
+//  • conventions: false = off; a non-empty string = used verbatim (the caller already has CLAUDE.md in
+//    context and may pass it directly); omitted/true = the scope agent reads the repo's CLAUDE.md /
+//    AGENTS.md (root + nested) itself and distills the standards to hold the change to.
+const CONVERSATION = typeof A.conversation === 'string' && A.conversation.trim() ? A.conversation.trim() : ''
+const CONV_BLOCK = CONVERSATION
+  ? `\nCONVERSATION / INTENT (what was actually requested and agreed — judge the change against THIS, not only the diff; flag missed requirements and unrequested scope creep):\n${CONVERSATION}\n`
+  : ''
+const CONVENTIONS_OFF = A.conventions === false
+const CONVENTIONS_LITERAL = typeof A.conventions === 'string' && A.conventions.trim() ? A.conventions.trim() : ''
+const CONVENTIONS_AUTO = !CONVENTIONS_OFF && !CONVENTIONS_LITERAL // default: the scope agent reads CLAUDE.md/AGENTS.md
+
 log(
   `Strata/strata-review: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ` (explicit agent cap${UNCAP_TOKENS ? '; token budget lifted' : ''})` : ''}, ` +
     `finders=${FINDERS}, floor=${SEVERITY_FLOOR}, fix=${WANT_FIX}, ` +
@@ -117,7 +135,11 @@ const DEFAULT_DIMS = [
   'maintainability (naming, dead code, duplication, leaky abstractions, convention drift)',
 ]
 const baseDims = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions : DEFAULT_DIMS
-const DIMS = baseDims.slice(0, FINDERS)
+// When grounding context is supplied, adherence to it is a first-class lens — slotted right after
+// correctness/security (so it survives the FINDERS slice) once we know whether any grounding exists.
+// The final DIMS list is built after the scope agent resolves conventions (see below).
+const ADHERENCE_DIM =
+  'convention & intent adherence (does the change follow the PROJECT CONVENTIONS above, and does it actually satisfy the CONVERSATION/INTENT — flag missed requirements, unrequested scope creep, and any deviation from the stated conventions)'
 
 // ---- schemas ----
 const SCOPE_SCHEMA = {
@@ -139,6 +161,7 @@ const SCOPE_SCHEMA = {
       },
     },
     overview: { type: 'string', description: 'one-paragraph summary of what the changeset does' },
+    conventions: { type: 'string', description: 'the project conventions/standards a reviewer should hold the change to, distilled from CLAUDE.md / AGENTS.md (empty if none found or not requested)' },
   },
 }
 const FINDINGS_SCHEMA = {
@@ -189,23 +212,41 @@ const SYNTH_SCHEMA = {
 
 // ---- Phase 1: SCOPE — one cheap haiku agent grounds the review in the actual changed files ----
 phase('Scope')
-let scope = { files: [], overview: '' }
+// When conventions are AUTO (the default), fold a CLAUDE.md/AGENTS.md read into the cheap scope agent so it
+// costs no extra agent. A caller-supplied literal or `false` skips this entirely.
+const SCOPE_CONV_TASK = CONVENTIONS_AUTO
+  ? `\n\nAlso read the repository's convention docs — CLAUDE.md and AGENTS.md (the root one AND any nested ones near the changed files), plus .cursor/rules / .editorconfig if present — and distill the conventions/standards a reviewer should hold THIS change to (structure, naming, error-handling, testing, immutability, style). Put that distilled summary in \`conventions\`. If there are no such docs, return an empty \`conventions\`.`
+  : ''
+let scope = { files: [], overview: '', conventions: '' }
 if (canSpawn()) {
   spawned++
   try {
     scope =
       (await agent(
-        `Enumerate the changed files in this review target so reviewers know exactly what to scrutinize. Do not review yet — just list the touched files with a one-line summary each, and a short overview of what the change does.\n${TARGET_NOTE}\n${SCOPE_INSTRUCTION}`,
+        `Enumerate the changed files in this review target so reviewers know exactly what to scrutinize. Do not review yet — just list the touched files with a one-line summary each, and a short overview of what the change does.\n${TARGET_NOTE}\n${SCOPE_INSTRUCTION}${SCOPE_CONV_TASK}`,
         { label: 'scope', phase: 'Scope', model: TIER.scope, schema: SCOPE_SCHEMA }
       )) || scope
   } catch (e) {
-    scope = { files: [], overview: '' }
+    scope = { files: [], overview: '', conventions: '' }
   }
 }
 const fileList = (scope.files || []).map((f) => f.path).filter(Boolean)
 const SCOPE_BLOCK =
   (scope.overview ? `\nCHANGE OVERVIEW:\n${scope.overview}\n` : '') +
   (fileList.length ? `\nFILES IN SCOPE (review only these):\n${fileList.map((p) => `- ${p}`).join('\n')}\n` : '')
+
+// ---- resolve grounding now that the scope agent has (optionally) read the conventions ----
+const CONVENTIONS = CONVENTIONS_LITERAL || (CONVENTIONS_AUTO ? String(scope.conventions || '').trim() : '')
+const CONVENTIONS_BLOCK = CONVENTIONS
+  ? `\nPROJECT CONVENTIONS (hold the change to these; convention drift is a reportable finding):\n${CONVENTIONS}\n`
+  : ''
+const GROUND_BLOCK = CONV_BLOCK + CONVENTIONS_BLOCK
+const groundOn = !!(CONVERSATION || CONVENTIONS)
+log(`review: grounding — conversation=${!!CONVERSATION}, conventions=${CONVENTIONS ? (CONVENTIONS_LITERAL ? 'literal' : 'auto-CLAUDE.md') : 'none'}`)
+
+// ---- build the dimension list: insert the adherence lens at high priority only when grounding exists ----
+const dimSource = groundOn ? [...baseDims.slice(0, 2), ADHERENCE_DIM, ...baseDims.slice(2)] : baseDims
+const DIMS = dimSource.slice(0, FINDERS)
 
 // ---- Phase 2: REVIEW — one sonnet reviewer per dimension, each grounded in file:line ----
 phase('Review')
@@ -219,7 +260,7 @@ const found = await pipeline(DIMS, (dim) => {
   }
   spawned++
   return agent(
-    `You are a senior reviewer examining a code change through ONE lens only: "${dim}". Ignore issues outside this lens — another reviewer covers those.\n${TARGET_NOTE}${SCOPE_BLOCK}\n${SCOPE_INSTRUCTION}\n\n` +
+    `You are a senior reviewer examining a code change through ONE lens only: "${dim}". Ignore issues outside this lens — another reviewer covers those.\n${TARGET_NOTE}${GROUND_BLOCK}${SCOPE_BLOCK}\n${SCOPE_INSTRUCTION}\n\n` +
       `Read the actual changed code. Report only concrete, real issues — each MUST cite file:line in location and quote the offending code in evidence. Do not invent issues to fill a quota; an empty findings list is a valid result for a clean change.${fixClause}`,
     { label: `review:${dim.split(' ')[0]}`, phase: 'Review', model: TIER.review, schema: FINDINGS_SCHEMA }
   )
@@ -279,7 +320,7 @@ for (const it of items) {
     spawned++
     thunks.push(() =>
       agent(
-        `Try to REFUTE this review finding. Re-read the cited code at ${it.location} and decide whether it is a REAL issue or a false positive. Be skeptical — a finding survives only if the evidence clearly supports it; default isReal=false when uncertain. If the severity is mis-rated, set revisedSeverity.\n\nFINDING:\n${JSON.stringify({ title: it.title, severity: it.severity, location: it.location, evidence: it.evidence, rationale: it.rationale })}`,
+        `Try to REFUTE this review finding. Re-read the cited code at ${it.location} and decide whether it is a REAL issue or a false positive. Be skeptical — a finding survives only if the evidence clearly supports it; default isReal=false when uncertain. If the severity is mis-rated, set revisedSeverity.\n${GROUND_BLOCK}\nFINDING:\n${JSON.stringify({ title: it.title, severity: it.severity, location: it.location, evidence: it.evidence, rationale: it.rationale })}`,
         { label: `verify:${String(it.title).slice(0, 28)}`, phase: 'Verify', model: TIER.verify, schema: VERDICT_SCHEMA }
       )
     )
@@ -307,7 +348,7 @@ spawned++ // the synthesis agent always runs
 let synthesis
 try {
   synthesis = await agent(
-    `You are the lead reviewer writing the final verdict on a code change.\n${TARGET_NOTE}` +
+    `You are the lead reviewer writing the final verdict on a code change.\n${TARGET_NOTE}${GROUND_BLOCK}` +
       (scope.overview ? `\nCHANGE OVERVIEW:\n${scope.overview}\n` : '') +
       `\nCONFIRMED FINDINGS (post adversarial verification, sorted by severity; \`raisedBy\` > 1 means multiple independent reviewers flagged the same site — strong signal):\n${JSON.stringify(confirmed, null, 2)}\n\n` +
       `Write the review:\n` +
@@ -342,6 +383,7 @@ return {
   capWasSet: candidates.length > 0,
   agentsSpawned: spawned,
   maxAgents: MAX_AGENTS,
+  grounding: { conversation: !!CONVERSATION, conventions: CONVENTIONS ? (CONVENTIONS_LITERAL ? 'literal' : 'auto-CLAUDE.md') : 'none' },
   dimensionsReviewed: DIMS.length,
   filesInScope: fileList,
   confirmedCount: confirmed.length,

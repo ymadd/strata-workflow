@@ -42,6 +42,8 @@ const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' && isFinite(A.adv
 // ---- model tiers: opus is spawned ONLY where judgment is needed (judge, advice, tie-break, critic, synth) ----
 const TIER = { scout: 'haiku', design: 'sonnet', judge: 'opus', build: 'sonnet', advise: 'opus', review: 'sonnet', verify: 'sonnet', tiebreak: 'opus', repair: 'sonnet', critic: 'opus', synth: 'opus' }
 if (A.tierHint === 'cheap') TIER.design = 'sonnet'
+// run every sonnet-tier agent on the 1M-context variant (after any hint demotion so a cheap design gets it too); haiku/opus untouched
+for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {

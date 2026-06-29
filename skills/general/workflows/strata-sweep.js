@@ -33,6 +33,8 @@ const HARD_LIMIT = 950 // runtime lifetime-agent backstop; never exceed
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // map = sonnet (must understand structure). review/verify = sonnet. systemic/synth = opus (the cross-cutting judgment).
 const TIER = { map: 'sonnet', review: 'sonnet', verify: 'sonnet', systemic: 'opus', synth: 'opus' }
+// run every sonnet-tier agent on the 1M-context variant (the cheap bulk carries the long inputs); haiku/opus untouched
+for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 if (A.tierHint === 'cheap') TIER.review = 'haiku' // shallow sweep: drop per-unit reviewers to haiku (systemic/synth stay opus)
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on refutation when correctness is paramount
 
@@ -97,6 +99,19 @@ const ROOT = A.root ? String(A.root) : '.'
 const SCOPE_HINT = A.scope ? String(A.scope) : '' // e.g. "only src/ and lib/", "the API layer"
 const EXCLUDE = Array.isArray(A.exclude) && A.exclude.length ? A.exclude : ['node_modules', 'dist', 'build', 'vendor', '.git', 'coverage', '*.min.*', 'lock files', 'generated code']
 const FOCUS = A.focus ? String(A.focus) : '' // free-text steer, e.g. "prioritize security and the payment flow"
+
+// ---- grounding context (NEW): the conversation/intent behind the sweep + the project's own conventions ----
+//  • conversation: caller-supplied (subagents can't see the parent session) — injected into every reviewer.
+//  • conventions: false = the map only infers conventions from code (legacy behavior); a non-empty string =
+//    used verbatim as the authoritative conventions; omitted/true = the map ALSO reads CLAUDE.md / AGENTS.md
+//    and merges stated conventions (precedence) with code-inferred ones.
+const CONVERSATION = typeof A.conversation === 'string' && A.conversation.trim() ? A.conversation.trim() : ''
+const CONV_BLOCK = CONVERSATION
+  ? `\nCONVERSATION / INTENT (what this audit is for — judge the code against THIS where relevant; flag missed requirements and unrequested scope creep):\n${CONVERSATION}\n`
+  : ''
+const CONVENTIONS_OFF = A.conventions === false
+const CONVENTIONS_LITERAL = typeof A.conventions === 'string' && A.conventions.trim() ? A.conventions.trim() : ''
+const CONVENTIONS_AUTO = !CONVENTIONS_OFF && !CONVENTIONS_LITERAL // default: the map reads CLAUDE.md/AGENTS.md too
 const SEVERITY_FLOOR = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].includes(A.severityFloor) ? A.severityFloor : 'INFO'
 const VERIFY_FLOOR = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].includes(A.verifyFloor) ? A.verifyFloor : 'HIGH' // at scale, only refute the serious ones
 
@@ -111,8 +126,10 @@ const DEFAULT_DIMS = [
   'performance (N+1, accidental O(n^2), blocking I/O on hot paths)',
   'maintainability (dead code, duplication, leaky abstractions, convention drift)',
 ]
-const DIMS = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions : DEFAULT_DIMS
-const DIM_LINE = DIMS.map((d) => `- ${d}`).join('\n')
+const baseDims = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions : DEFAULT_DIMS
+// The adherence lens (and final DIM_LINE) is assembled after the map resolves conventions — see below.
+const ADHERENCE_DIM =
+  'convention & intent adherence (does the code follow the PROJECT CONVENTIONS above / CLAUDE.md, and — when a CONVERSATION/INTENT is given — does it satisfy it; flag convention drift and missed/over-built requirements)'
 
 log(
   `Strata/strata-sweep: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}${explicitMax != null ? ` (explicit agent cap${UNCAP_TOKENS ? '; token budget lifted' : ''})` : ''}, ` +
@@ -127,7 +144,7 @@ const MAP_SCHEMA = {
   required: ['units', 'architecture'],
   properties: {
     architecture: { type: 'string', description: 'a short sketch of what this codebase is and how it is structured (layers, entry points, key modules)' },
-    conventions: { type: 'string', description: 'the conventions/patterns a reviewer should hold the code to (inferred from the code itself)' },
+    conventions: { type: 'string', description: 'the conventions/patterns a reviewer should hold the code to — from CLAUDE.md/AGENTS.md if present (stated, authoritative) merged with patterns inferred from the code itself' },
     totalFiles: { type: 'integer', description: 'how many source files exist in scope (so coverage can be reported honestly)' },
     units: {
       type: 'array',
@@ -218,6 +235,12 @@ const SYNTH_SCHEMA = {
 
 // ---- Phase 1: MAP — one agent partitions the codebase into risk-ranked units + an architecture sketch ----
 phase('Map')
+// How the map should source the conventions it returns: read CLAUDE.md (AUTO), defer to a caller literal, or infer-only.
+const MAP_CONV_TASK = CONVENTIONS_LITERAL
+  ? ' The caller supplied authoritative conventions, so you need not restate them — focus the `conventions` field on code-inferred patterns that do NOT contradict the supplied set.'
+  : CONVENTIONS_AUTO
+    ? " Read the repo's CLAUDE.md / AGENTS.md (root + nested) and .cursor/rules if present for STATED conventions, AND infer conventions from the code itself; return both merged in `conventions`, stated taking precedence."
+    : ' (infer the conventions from the code itself).'
 let map = { units: [], architecture: '', conventions: '', totalFiles: 0 }
 if (canSpawn()) {
   spawned++
@@ -232,7 +255,7 @@ if (canSpawn()) {
           `\nDiscover the files yourself (e.g. \`git ls-files\`, or \`find\`/\`rg --files\` honoring the excludes). Then:\n` +
           `1) Group related files into at most ${TARGET_UNITS} coherent units (by module/feature/directory — keep a unit small enough to review in one pass). If there are more files than fit, make larger but still-coherent units; never silently omit areas — fold them into a unit or list them.\n` +
           `2) Score each unit's risk 0-10 (10 = security-sensitive, complex, high-churn, or central to the system). Riskiest units get reviewed first.\n` +
-          `3) Sketch the architecture (what this is, its layers/entry points) and the conventions the code should be held to. These feed a later cross-cutting critic.\n` +
+          `3) Sketch the architecture (what this is, its layers/entry points) and the conventions the code should be held to.${MAP_CONV_TASK} These feed a later cross-cutting critic.\n` +
           `4) Report totalFiles so coverage can be stated honestly.`,
         { label: 'map', phase: 'Map', model: TIER.map, schema: MAP_SCHEMA }
       )) || map
@@ -262,9 +285,19 @@ if (unitsSkipped.length) {
   log(`map: ${allUnits.length} units, all within budget`)
 }
 
+// Effective conventions: a caller literal wins; otherwise whatever the map returned (CLAUDE.md-merged or inferred).
+const CONVENTIONS = CONVENTIONS_LITERAL || String(map.conventions || '').trim()
+const groundOn = !!(CONVERSATION || CONVENTIONS)
+log(`sweep: grounding — conversation=${!!CONVERSATION}, conventions=${CONVENTIONS ? (CONVENTIONS_LITERAL ? 'literal' : CONVENTIONS_AUTO ? 'auto-CLAUDE.md+code' : 'code-inferred') : 'none'}`)
+// Insert the adherence lens at high priority only when grounding exists; sweep reviews every unit across ALL
+// dims (no FINDERS slice), so this adds a lens to each per-unit reviewer at no extra agent cost.
+const DIMS = groundOn ? [...baseDims.slice(0, 2), ADHERENCE_DIM, ...baseDims.slice(2)] : baseDims
+const DIM_LINE = DIMS.map((d) => `- ${d}`).join('\n')
+
 const CONTEXT_BLOCK =
   (map.architecture ? `\nARCHITECTURE:\n${map.architecture}\n` : '') +
-  (map.conventions ? `\nCONVENTIONS TO HOLD THE CODE TO:\n${map.conventions}\n` : '') +
+  (CONVENTIONS ? `\nCONVENTIONS TO HOLD THE CODE TO:\n${CONVENTIONS}\n` : '') +
+  CONV_BLOCK +
   (FOCUS ? `\nREVIEWER FOCUS: ${FOCUS}\n` : '')
 
 // ---- Phase 2: REVIEW — pipelined per unit: review (sonnet) THEN severity-gated verify, no barrier between units ----
@@ -365,7 +398,8 @@ if (canSpawn()) {
       (await agent(
         `You are a principal engineer doing the CROSS-CUTTING pass of a codebase review. Per-unit reviewers already found the local issues below; your job is the issues they CANNOT see from one unit — systemic patterns, architectural weaknesses, repeated anti-patterns, inconsistent handling of the same concern across modules, missing layers (validation/auth/error boundaries), and convention drift.\n` +
           (map.architecture ? `\nARCHITECTURE:\n${map.architecture}\n` : '') +
-          (map.conventions ? `\nINTENDED CONVENTIONS:\n${map.conventions}\n` : '') +
+          (CONVENTIONS ? `\nINTENDED CONVENTIONS:\n${CONVENTIONS}\n` : '') +
+          CONV_BLOCK +
           `\nCONFIRMED PER-UNIT FINDINGS (note recurring locations/themes — \`raisedBy\`>1 or the same theme across many units is a systemic signal):\n${JSON.stringify(
             confirmed.map((f) => ({ unit: f.unitId, severity: f.severity, title: f.title, location: f.location })),
             null,
@@ -397,6 +431,8 @@ try {
   synthesis = await agent(
     `You are the lead reviewer writing the final report of a codebase-wide sweep. Grade overall health, rank the top risks, and be HONEST about coverage.\n` +
       (map.architecture ? `\nARCHITECTURE:\n${map.architecture}\n` : '') +
+      (CONVENTIONS ? `\nCONVENTIONS THE CODE WAS HELD TO:\n${CONVENTIONS}\n` : '') +
+      CONV_BLOCK +
       `\nCONFIRMED PER-UNIT FINDINGS (severity-sorted; raisedBy>1 = multiple sites/lenses):\n${JSON.stringify(confirmed, null, 2)}\n\n` +
       `SYSTEMIC / CROSS-CUTTING FINDINGS:\n${JSON.stringify(systemicFindings, null, 2)}\n\n` +
       `COVERAGE FACTS (state these plainly in coverageNote — what was reviewed vs deferred by the agent budget, and the verification depth):\n${JSON.stringify(coverageFacts, null, 2)}\n\n` +
@@ -426,6 +462,7 @@ return {
   capWasSet: candidates.length > 0,
   agentsSpawned: spawned,
   maxAgents: MAX_AGENTS,
+  grounding: { conversation: !!CONVERSATION, conventions: CONVENTIONS ? (CONVENTIONS_LITERAL ? 'literal' : CONVENTIONS_AUTO ? 'auto-CLAUDE.md+code' : 'code-inferred') : 'none' },
   unitsTotal: allUnits.length,
   unitsDeepReviewed: unitsToReview.length,
   unitsDeferred: unitsSkipped.map((u) => u.id),

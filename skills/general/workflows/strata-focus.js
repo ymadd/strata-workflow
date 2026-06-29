@@ -28,6 +28,28 @@ if (!A.task) {
   }
 }
 
+// ---- grounding context (NEW): the conversation/intent behind the task + the project's conventions ----
+// focus is the GENERAL, restraint mode (used for research/migrate as well as code), so unlike code-locked
+// review/sweep, convention grounding is OPT-IN — it never auto-reads CLAUDE.md on a non-code task:
+//  • conversation: caller-supplied (subagents can't see the parent session) — injected into every scout.
+//  • conventions: a non-empty string = used verbatim; `true` = scouts consult the repo's CLAUDE.md/AGENTS.md
+//    themselves (no extra agent — focus has no scope phase); omitted/false = off (legacy behavior).
+const CONVERSATION = typeof A.conversation === 'string' && A.conversation.trim() ? A.conversation.trim() : ''
+const CONV_BLOCK = CONVERSATION
+  ? `\nCONVERSATION / INTENT (what was actually requested — judge the work against THIS, not just the surface; flag missed requirements and unrequested scope creep):\n${CONVERSATION}\n`
+  : ''
+const CONVENTIONS_LITERAL = typeof A.conventions === 'string' && A.conventions.trim() ? A.conventions.trim() : ''
+const CONVENTIONS_AUTO = A.conventions === true // opt-in only (review/sweep auto-read; focus does not)
+const CONVENTIONS_BLOCK = CONVENTIONS_LITERAL ? `\nPROJECT CONVENTIONS (hold the work to these; flag deviations):\n${CONVENTIONS_LITERAL}\n` : ''
+// focus has no scope/map agent, so AUTO conventions are sourced by the scouts themselves, on demand.
+const CONV_SELF_READ = CONVENTIONS_AUTO
+  ? "\nIf relevant to your dimension, consult the repo's CLAUDE.md / AGENTS.md for project conventions and flag deviations."
+  : ''
+const GROUND_BLOCK = CONV_BLOCK + CONVENTIONS_BLOCK
+const groundOn = !!(CONVERSATION || CONVENTIONS_LITERAL || CONVENTIONS_AUTO)
+const ADHERENCE_DIM =
+  'convention & intent adherence (does the work follow the project conventions, and does it satisfy what the conversation/intent asked — flag missed requirements, scope creep, and convention deviations)'
+
 // ---- tunable constants (the enforcement surface) ----
 const DEFAULT_CAP = 150_000 // used when neither args.cap nor a +N budget directive is set
 const TOKENS_PER_AGENT = 12_000 // blended planning estimate for deriving the agent ceiling
@@ -36,6 +58,8 @@ const AGENT_ROOF = 40
 
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 const TIER = { find: 'haiku', verify: 'sonnet', synth: 'opus' }
+// run every sonnet-tier agent on the 1M-context variant (the cheap bulk carries the long inputs); haiku/opus untouched
+for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 if (A.tierHint === 'cheap') TIER.verify = 'haiku'
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on the adversarial verify when correctness is critical
 
@@ -105,7 +129,10 @@ const baseDims =
   A.dimensions && A.dimensions.length
     ? A.dimensions
     : PROFILES[A.taskClass] || ['scope', 'evidence', 'risks']
-const DIMS = baseDims.slice(0, FINDERS)
+// When grounding context is supplied, slot the adherence lens right after the first two dims so it survives
+// the FINDERS slice; otherwise leave the profile untouched (preserves default focus behavior).
+const dimSource = groundOn ? [...baseDims.slice(0, 2), ADHERENCE_DIM, ...baseDims.slice(2)] : baseDims
+const DIMS = dimSource.slice(0, FINDERS)
 
 // ---- schemas: schema-bounded cheap workers keep output small AND parseable ----
 const FINDINGS_SCHEMA = {
@@ -155,7 +182,7 @@ const found = await pipeline(DIMS, (dim) => {
   }
   spawned++
   return agent(
-    `Task: ${A.task}\n\nInvestigate STRICTLY the dimension: "${dim}". Read the real files/sources and quote evidence as path:line (or a source reference). Report only concrete, evidence-backed findings for this dimension.`,
+    `Task: ${A.task}\n${GROUND_BLOCK}\nInvestigate STRICTLY the dimension: "${dim}". Read the real files/sources and quote evidence as path:line (or a source reference).${CONV_SELF_READ} Report only concrete, evidence-backed findings for this dimension.`,
     { label: `find:${dim}`, phase: 'Find', model: TIER.find, schema: FINDINGS_SCHEMA }
   )
 })
@@ -182,7 +209,7 @@ for (const it of items) {
     spawned++
     thunks.push(() =>
       agent(
-        `Adversarially verify this finding. Re-read the cited evidence and judge whether it is REAL (not a false positive). Be skeptical; default to isReal=false if the evidence does not clearly support it.\n\n${JSON.stringify(it)}`,
+        `Adversarially verify this finding. Re-read the cited evidence and judge whether it is REAL (not a false positive). Be skeptical; default to isReal=false if the evidence does not clearly support it.\n${GROUND_BLOCK}\n${JSON.stringify(it)}`,
         { label: `verify:${it.title}`, phase: 'Verify', model: TIER.verify, schema: VERDICT_SCHEMA }
       )
     )
@@ -205,7 +232,7 @@ spawned++ // the synthesis agent always runs; count it for honest reporting
 let synthesis
 try {
   synthesis = await agent(
-    `Task: ${A.task}\n\nConfirmed findings (after adversarial verification):\n${JSON.stringify(confirmed, null, 2)}\n\nProduce the final, correct answer/roadmap. You MAY read 2-3 key files to ground the synthesis. Explicitly note any coverage gaps caused by the agent budget.`,
+    `Task: ${A.task}\n${GROUND_BLOCK}\nConfirmed findings (after adversarial verification):\n${JSON.stringify(confirmed, null, 2)}\n\nProduce the final, correct answer/roadmap. You MAY read 2-3 key files to ground the synthesis. Explicitly note any coverage gaps caused by the agent budget.`,
     { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
   )
   // agent() can resolve to null without throwing — route that into the fail-open below

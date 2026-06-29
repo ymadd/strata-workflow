@@ -39,6 +39,8 @@ const HARD_LIMIT = 950 // runtime lifetime-agent backstop; never exceed
 // pm/director/ideate/synth = opus (the brains). build/revise = sonnet. grade = sonnet (cheap mechanical check).
 const TIER = { pm: 'opus', director: 'opus', ideate: 'opus', build: 'sonnet', grade: 'sonnet', revise: 'sonnet', synth: 'opus' }
 if (A.tierHint === 'cheap') TIER.ideate = 'sonnet' // never cheap the pm/director judgment; ideation can be cheaper
+// run every sonnet-tier agent on the 1M-context variant (after any hint demotion so a cheap ideate gets it too); opus untouched
+for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {

@@ -57,6 +57,8 @@ const APEX_MODEL = FABLE_HALTED ? 'opus' : A.dataSensitive === true ? 'opus' : A
 const EXEC_MODEL = A.tierHint === 'cheap' ? 'sonnet' : 'opus' // the single-task builder (L2); never apex, never haiku
 const VERIFY_MODEL = 'sonnet' // cheap adversarial gate; tests are the real ground truth
 const PLAN_MODEL = APEX_MODEL // packet generation = the output-light L0 role of the spec
+// run the sonnet tier on the 1M-context variant at the call boundary (opus/apex pass through unchanged)
+const longCtx = (m) => (m === 'sonnet' ? 'sonnet[1m]' : m)
 
 // ---- budget reads are BEST-EFFORT (never let the budget API throw) ----
 const spentNow = () => {
@@ -240,7 +242,7 @@ const verifyOnce = async (u, build, label) => {
   spawned++
   return agent(
     `Adversarially verify this unit against its acceptance criteria and DoD. Re-read the changed files; run the relevant tests yourself if runnable. Be skeptical — default to pass=false unless the evidence clearly supports it.\n\nUnit: ${u.title}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nBuilder report: ${JSON.stringify(build)}`,
-    { label, phase: 'Execute', model: VERIFY_MODEL, schema: VERIFY_SCHEMA }
+    { label, phase: 'Execute', model: longCtx(VERIFY_MODEL), schema: VERIFY_SCHEMA }
   )
 }
 
@@ -255,7 +257,7 @@ for (const u of units) {
     continue
   }
 
-  const unitModel = u.tier === 'sonnet' ? 'sonnet' : EXEC_MODEL
+  const unitModel = longCtx(u.tier === 'sonnet' ? 'sonnet' : EXEC_MODEL)
   let escalation = 'none'
   let lastBuild = null
   let lastVerify = null

@@ -41,6 +41,8 @@ const AGENT_ROOF = 40
 // diverge = sonnet (DRAFT/WRITE). advise/judge/synth = opus (the value of a tournament IS the judgment).
 const TIER = { advise: 'opus', diverge: 'sonnet', judge: 'opus', synth: 'opus' }
 if (A.tierHint === 'cheap') TIER.advise = 'sonnet' // judge/synth stay opus — never cheap the judgment
+// run every sonnet-tier agent on the 1M-context variant (after any hint demotion so a cheap advise gets it too)
+for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {
