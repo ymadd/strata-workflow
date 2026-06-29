@@ -33,8 +33,6 @@ const HARD_LIMIT = 950 // runtime lifetime-agent backstop; never exceed
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // map = sonnet (must understand structure). review/verify = sonnet. systemic/synth = opus (the cross-cutting judgment).
 const TIER = { map: 'sonnet', review: 'sonnet', verify: 'sonnet', systemic: 'opus', synth: 'opus' }
-// run every sonnet-tier agent on the 1M-context variant (the cheap bulk carries the long inputs); haiku/opus untouched
-for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 if (A.tierHint === 'cheap') TIER.review = 'haiku' // shallow sweep: drop per-unit reviewers to haiku (systemic/synth stay opus)
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on refutation when correctness is paramount
 

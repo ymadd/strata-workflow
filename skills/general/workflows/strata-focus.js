@@ -58,8 +58,6 @@ const AGENT_ROOF = 40
 
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 const TIER = { find: 'haiku', verify: 'sonnet', synth: 'opus' }
-// run every sonnet-tier agent on the 1M-context variant (the cheap bulk carries the long inputs); haiku/opus untouched
-for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 if (A.tierHint === 'cheap') TIER.verify = 'haiku'
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on the adversarial verify when correctness is critical
 

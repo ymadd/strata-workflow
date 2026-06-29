@@ -126,7 +126,7 @@ EXAMPLES (copy one, edit the task)
 
 ## Model-tiering mnemonic
 - **FIND / EXTRACT / FORMAT / CLASSIFY → haiku**
-- **TRACE / WRITE-CODE / VOTE / DRAFT / REVISE → sonnet** (run on the **1M-context variant `sonnet[1m]`** so the cheap-bulk tier carries the long inputs)
+- **TRACE / WRITE-CODE / VOTE / DRAFT / REVISE → sonnet**
 - **SYNTHESIZE / JUDGE / ROOT-CAUSE / PLAN / ADVISE / AUDIT → opus** (a few stages per run)
 - **ESCALATED DIAGNOSIS / CLEAN-SLATE REBUILD → fable** (delegate mode; ≤1 advise + ≤1 rebuild per unit) / **ORCHESTRATE: PACKET + INTEGRATION REVIEW → fable** (conduct mode; ≤1 plan + ≤1 review per run, never a unit executor). Both spend-gated by literal caps; `dataSensitive` forces opus — Mythos-class retention differs.
 - Unclassified → default **sonnet** (never opus, never haiku). Typical mix: many haiku/sonnet, a thin opus layer — vs ultracode running everything on opus.

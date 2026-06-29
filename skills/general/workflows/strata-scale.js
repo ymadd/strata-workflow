@@ -46,8 +46,6 @@ if (!units.length || !A.task) {
 // ---- SCALE-mode model tiering: force a right-sized model; opus is never the per-unit model ----
 const PICK = A.model === 'haiku' || A.model === 'sonnet' || A.model === 'opus' ? A.model : 'sonnet'
 const UNIT_MODEL = PICK === 'opus' ? 'sonnet' : PICK
-// run the sonnet tier on the 1M-context variant at the call boundary (haiku/opus pass through unchanged)
-const longCtx = (m) => (m === 'sonnet' ? 'sonnet[1m]' : m)
 
 // ---- lifetime-cap guard (harness hard cap is 1000; keep headroom) ----
 const HARD_LIMIT = 950
@@ -118,7 +116,7 @@ if (ADVISE) {
     {
       label: 'advise',
       phase: 'Advise',
-      model: longCtx(ADV_MODEL),
+      model: ADV_MODEL,
       schema: { type: 'object', additionalProperties: false, required: ['brief'], properties: { brief: { type: 'string', maxLength: 3500 } } },
     }
   )
@@ -141,7 +139,7 @@ const results = await pipeline(units, (unit, _orig, index) => {
     `${A.task}\n\n${INSTRUCTIONS}${advisory}\n\nUnit spec (build exactly this; make it distinct from siblings): ${JSON.stringify(
       unit
     )}\nUnit index: ${index}.`,
-    { label: `build:${index}`, phase: 'Build', model: longCtx(UNIT_MODEL), schema: SCHEMA }
+    { label: `build:${index}`, phase: 'Build', model: UNIT_MODEL, schema: SCHEMA }
   ).then((r) => {
     done++
     if (done % 25 === 0) log(`built ${done}/${units.length} (~${Math.max(0, spentNow() - startSpent)} tok this run)`)

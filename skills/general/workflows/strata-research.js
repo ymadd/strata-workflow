@@ -36,8 +36,6 @@ const AGENT_ROOF = 40
 // frame/synth = opus (the reasoning IS the value). investigate/refute = sonnet. extraction = haiku.
 const TIER = { frame: 'opus', investigate: 'sonnet', refute: 'sonnet', synth: 'opus' }
 if (A.tierHint === 'cheap') TIER.frame = 'sonnet' // synth stays opus — never cheap the final integration
-// run every sonnet-tier agent on the 1M-context variant (after any hint demotion so a cheap frame gets it too)
-for (const k in TIER) if (TIER[k] === 'sonnet') TIER[k] = 'sonnet[1m]'
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {

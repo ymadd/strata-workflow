@@ -28,8 +28,6 @@ const UNIT_MODEL = A.model === 'haiku' || A.model === 'sonnet' ? A.model : 'sonn
 const PLAN_MODEL = A.planModel === 'sonnet' || A.planModel === 'haiku' ? A.planModel : 'opus'
 const ADVICE_MODEL = 'opus'
 const AUDIT_MODEL = 'opus'
-// run the sonnet tier on the 1M-context variant at the call boundary (haiku/opus pass through unchanged)
-const longCtx = (m) => (m === 'sonnet' ? 'sonnet[1m]' : m)
 // guard: typeof NaN === 'number' is true, so add isFinite checks to prevent NaN propagating into
 // MAX_AGENTS (NaN < NaN is false → can() always false → while loop never runs → silent empty result)
 const MAX_AGENTS = Math.max(8, Math.min(950, typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.floor(A.maxAgents) : 150))
@@ -175,7 +173,7 @@ async function buildUnit(spec, round) {
     )}\nAlso self-assess honestly: set needsAdvice=true ONLY for a genuinely tricky combo where an expert tip would materially raise quality, and put your precise question in adviceQuestion. Set id=kebab slug, category=${
       spec.a != null ? 'the component type' : 'a short category'
     }, tags=[style + 1-2 descriptors].`,
-    { label: `draft:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: longCtx(UNIT_MODEL), schema: DRAFT_SCHEMA }
+    { label: `draft:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: UNIT_MODEL, schema: DRAFT_SCHEMA }
   )
   if (!draft) return null
   const lowConfidence = typeof draft.selfScore === 'number' && draft.selfScore < ADVICE_THRESHOLD
@@ -194,7 +192,7 @@ async function buildUnit(spec, round) {
         `${A.task}\n\n${INSTRUCTIONS}\n\nUnit: ${JSON.stringify(spec)}. Your earlier draft, now improve it using this EXPERT ADVICE:\n${
           adv.advice
         }\n\nReturn the final, polished component.`,
-        { label: `revise:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: longCtx(UNIT_MODEL), schema: COMP_SCHEMA }
+        { label: `revise:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: UNIT_MODEL, schema: COMP_SCHEMA }
       )
       if (revised) return revised
     }
@@ -325,7 +323,7 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
       (systemic.length ? `Recent audit systemic issues to steer AROUND: ${JSON.stringify(systemic.slice(-6))}.\n` : '') +
       (goalResidual.length ? `PRIORITIES to close next (from the goal-check): ${JSON.stringify(goalResidual.slice(0, 6))}. Bias this batch toward these.\n` : '') +
       `Propose the NEXT batch of up to ${roundCap} specs as {a,b} pairs (do NOT exceed ${roundCap}): FIRST any uncovered seed-grid cells; only when the seed grid is exhausted, EXPAND by inventing NEW component types (a) and/or styles (b) not yet present. Keep them distinct. Set domainExhausted=true ONLY if you truly cannot propose anything fresh.`,
-    { label: `plan:r${round}`, phase: `Round ${round} · Plan`, model: longCtx(PLAN_MODEL), schema: PLAN_SCHEMA }
+    { label: `plan:r${round}`, phase: `Round ${round} · Plan`, model: PLAN_MODEL, schema: PLAN_SCHEMA }
   )
   let specs = ((plan && plan.specs) || []).filter((s) => s && !covered.has(cellKey(s)))
   specs = specs.slice(0, roundCap)
@@ -381,7 +379,7 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
               )}". Rebuild it fixing that defect (especially: scope ALL CSS under .uic-<slug>; define SVG filters inline; ensure it animates). Category: ${
                 c.category
               }; keep the same id "${c.id}". Title/tags as before.`,
-              { label: `repair:${c.id}`, phase: `Round ${round} · Repair`, model: longCtx(UNIT_MODEL), schema: COMP_SCHEMA }
+              { label: `repair:${c.id}`, phase: `Round ${round} · Repair`, model: UNIT_MODEL, schema: COMP_SCHEMA }
             )
           })
         )

@@ -30,8 +30,6 @@ if (!A.batchDir || typeof A.count !== 'number' || !isFinite(A.count) || A.count 
 // guard: isFinite prevents A.batchSize=Infinity → BATCH=Infinity → nBatchesRaw=0 → silent empty run
 const BATCH = typeof A.batchSize === 'number' && isFinite(A.batchSize) && A.batchSize > 0 ? Math.floor(A.batchSize) : 20
 const AUDIT_MODEL = A.model === 'sonnet' || A.model === 'haiku' ? A.model : 'opus'
-// run the sonnet tier on the 1M-context variant at the call boundary (haiku/opus pass through unchanged)
-const longCtx = (m) => (m === 'sonnet' ? 'sonnet[1m]' : m)
 // ---- literal agent-count cap: harness hard limit is 1000; keep 1 slot for the critic ----
 const HARD_LIMIT = 950
 const nBatchesRaw = Math.ceil(A.count / BATCH)
@@ -80,7 +78,7 @@ const audited = await pipeline(batchIdx, (i) => {
 - Does it duplicate another unit (same id or near-identical to a sibling)?
 Grade quality 0-100 (polish, distinctiveness, correctness).${A.task ? ' Task context: ' + A.task : ''}
 Return one verdict per component: {id, score, ok (score>=60 AND not broken), broken, dup, issue}.`,
-    { label: `audit:${pad(i)}`, phase: 'Audit', model: longCtx(AUDIT_MODEL), schema: BATCH_SCHEMA }
+    { label: `audit:${pad(i)}`, phase: 'Audit', model: AUDIT_MODEL, schema: BATCH_SCHEMA }
   )
 })
 const perItem = audited.filter(Boolean).flatMap((b) => (b && b.verdicts ? b.verdicts : []))
