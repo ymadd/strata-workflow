@@ -1,5 +1,7 @@
 # grow — `strata-grow` (self-improving / goal-driven) — how to call
 
+> Surface name: `scale rounds`. The old mode name still routes here as an alias; the script and its args are unchanged.
+
 Where `strata-scale` is "fixed N at once," `strata-grow` **auto-generates rounds (= phases) and grows to the agent-count cap (≤950)**, ultracode-style. One round = **Plan → Build → Audit → Repair**.
 
 ```js

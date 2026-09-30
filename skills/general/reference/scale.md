@@ -23,6 +23,7 @@ Workflow({
 
 ## Scale quality pipeline: ADVISE → BUILD → AUDIT → REPAIR
 A **thin opus layer** wraps the cheap bulk (opus stays a few % of total).
+- **Variant `rounds`** (formerly the `grow` mode; `grow` is still accepted as an alias): when the work should improve itself toward a goal instead of running a fixed list once, the router calls `strata-grow.js` — see `reference/grow.md` for its args (Goal Contract, seed grid, advice threshold, checkpoints).
 - **Jev routing (optional, via the `strata-assist` mod):** units are homogeneous, so ONE route is made for the unit template and applied to every build unit, inside `haiku/low · sonnet/low · sonnet/medium` (opus is never a per-unit model at scale). An explicit `model` arg or `dataSensitive` skips routing. The run returns `routing`.
 - **ADVISE (opus ×1, pre-pass):** `strata-scale`'s `advise` (default on). One opus brief — quality bar, pitfalls, best practices, consistency rules — injected into every cheap worker. The single opus cost is amortized over N, lifting each worker toward expert level.
 - **BUILD (sonnet × N):** schema-bounded right-sized fan-out.

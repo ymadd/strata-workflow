@@ -1,5 +1,7 @@
 # evolve — `strata-evolve` (autonomous, self-propagating development) — how to call
 
+> Surface name: `ultra emergent`. The old mode name still routes here as an alias; the script and its args are unchanged.
+
 For autonomously building toward a user's vision while *generating ideas* to make it better. A **PM (opus)** owns the "what/why" — turns the vision into a charter, selects which bold ideas to fold in, and is the **goal-critic**. A **DIRECTOR (opus)** owns the "how" — drafts an **emergent** phase plan (not a fixed arc) and, at each phase audit, decides **PASS / SUBDIVIDE / REPAIR**. SUBDIVIDE splits an important-or-risky phase into finer sub-phases and spawns MORE agents — the plan grows itself. Sonnet workers build the real artifacts each phase. Stops when the PM judges the vision met, or the agent cap / budget is hit.
 
 > **Decide the goal first.** This is the highest-stakes mode — it self-propagates and writes real files. Agree a **Goal Contract** with the human (see grow's "Step 0 — Goal alignment" in `reference/grow.md`) and pass it as `goal` before launching; in `unleashed` runs especially, confirm scope first.

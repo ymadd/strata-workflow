@@ -18,6 +18,7 @@ Workflow({ scriptPath: "${CLAUDE_SKILL_DIR}/workflows/strata-ultra.js", args: {
 } })
 ```
 
+- **Variant `emergent`** (formerly the `evolve` mode; `evolve` is still accepted as an alias; opt-in, never auto-routed): when the phases themselves should be invented and subdivided by a PM + Director rather than follow ultra's fixed arc, the router calls `strata-evolve.js` — see `reference/evolve.md`.
 - **Dynamic escalation (opus spawned only on demand):** (1) a build unit that self-rates below `adviceThreshold` gets an opus **advice** pass + a sonnet **revise**; (2) when two verifiers **split** on a CRITICAL/HIGH issue, an opus **tie-breaker** decides; (3) when review goes dry, an opus **completeness critic** grows NEW work units for any gaps, builds them, and re-enters review — looping until it declares the deliverable complete or the budget runs out.
 - **Budget split:** the front arc (understand/design/initial build) takes a lean guaranteed slice (~35%); the rest is the **dynamic back half** where escalation + gap-growth live. So a bigger cap doesn't just add agents — it lets more of the dynamic behavior actually fire. The advice/completeness passes need headroom: budget **500k+** (≈30+ agents) to see them, not just the tie-breaker.
 - Returns `{ winnerLens, unitCount, dynamic: { adviceEscalations, tiebreakers, gapUnitsAdded, improvementRounds }, reviewLog, artifacts (unitId→output), synthesis }`.

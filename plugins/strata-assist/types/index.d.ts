@@ -1,6 +1,7 @@
 export type Parsed = {
   skill: string
   mode?: string
+  variant?: string
   domain?: string
   cap?: number // token cap (k/m token)
   maxAgents?: number // bare integer

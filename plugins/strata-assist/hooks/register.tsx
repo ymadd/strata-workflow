@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Engine, Register } from 'claude-code'
 
-import { parse, candidates, agentEstimate, fmtTokens, MODES } from './strata'
+import { parse, candidates, agentEstimate, fmtTokens, MODES, VARIANTS } from './strata'
 import { buildRequest, readResponse, JEV_URL, JEV_MODEL, type Route } from './jev'
 import { buildQuestions, buildState, readAnswers, decide, DEFAULT_POLICY, type Policy, type RouteUnit } from './route'
 
@@ -273,12 +273,12 @@ export const register: Register = on => {
         ? `cap=${fmtTokens(est.cap)}${est.capSet ? '' : ' (default)'} · agents≈${est.agents}`
         : p.cap ? `cap=${fmtTokens(p.cap)}` : 'cap=mode default'
     const head =
-      `Strata:${p.skill} · mode=${p.mode ?? 'auto'} · domain=${p.domain ?? '—'} · ${capText}` +
+      `Strata:${p.skill} · mode=${p.mode ? p.mode + (p.variant ? `+${p.variant}` : '') : 'auto'} · domain=${p.domain ?? '—'} · ${capText}` +
       (p.tier ? ` · tier=${p.tier}` : '') + (p.unleashed ? ' · unleashed' : '')
 
     const lines: string[] = []
-    if (p.mode) lines.push(`${p.mode}: ${MODES[p.mode]}`)
-    if (p.mode === 'evolve') lines.push('evolve は自律ビルド（既定 500k）。意図した指定か確認してください')
+    if (p.mode) lines.push(`${p.mode}: ${MODES[p.mode]}${p.variant ? ` · ${p.variant}: ${VARIANTS[p.variant].about}` : ''}`)
+    if (p.variant === 'emergent') lines.push('ultra emergent（旧 evolve）は自律ビルド（既定 500k）。意図した指定か確認してください')
     if (!p.inTask) {
       const next_ = candidates(p)
       lines.push(next_.length ? `次に置ける語: ${next_.slice(0, 10).join('  ')}${p.mode ? '' : '  (省略すると自動選択)'}` : 'タスクを書いてください')

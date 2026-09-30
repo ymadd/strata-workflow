@@ -11,12 +11,20 @@ export const MODES: Record<string, string> = {
   debate: 'one claim → adversarial rebuttal → verdict',
   research: 'hypotheses → web-grounded investigate → cited synthesis',
   scale: 'mass fan-out over a KNOWN work-list',
-  grow: 'self-improving Plan→Build→Audit→Repair loop',
   ultra: 'the full task arc (understand→build→synth), capped',
-  evolve: 'autonomous build; PM + Director grow the plan (opt-in, 500k)',
   delegate: 'ONE heavy task: cheap-first build → verify → fable apex on failure',
   conduct: 'fable conducts a fan-out of file-disjoint units',
   debug: 'unknown-cause bug: repro → hypotheses + experiments → fix on a confirmed cause',
+}
+
+// variants refine a mode (and pick its script); the old mode names stay accepted as aliases
+export const VARIANTS: Record<string, { mode: string; about: string }> = {
+  rounds: { mode: 'scale', about: 'self-improving Plan→Build→Audit→Repair rounds toward a goal (strata-grow)' },
+  emergent: { mode: 'ultra', about: 'autonomous build; PM + Director grow the plan (strata-evolve, opt-in, 500k)' },
+}
+export const ALIASES: Record<string, { mode: string; variant: string }> = {
+  grow: { mode: 'scale', variant: 'rounds' },
+  evolve: { mode: 'ultra', variant: 'emergent' },
 }
 
 export const DOMAINS = ['code', 'finance', 'security'] as const
@@ -25,9 +33,9 @@ export const TIERS = ['cheap', 'hard'] as const
 // traced to each workflow's DEFAULT_CAP
 const DEFAULT_CAP: Record<string, number> = {
   focus: 150_000, review: 150_000, panel: 150_000, debate: 150_000, research: 150_000, ultra: 150_000,
-  sweep: 200_000, delegate: 200_000, conduct: 200_000, debug: 200_000, evolve: 500_000,
+  sweep: 200_000, delegate: 200_000, conduct: 200_000, debug: 200_000, 'ultra+emergent': 500_000,
 }
-const ROOF: Record<string, number> = { sweep: 120, ultra: 120, evolve: 120 }
+const ROOF: Record<string, number> = { sweep: 120, ultra: 120 }
 
 import type { Parsed } from '../types'
 export type { Parsed }
@@ -63,6 +71,8 @@ export function parse(draft: string): Parsed | null {
 
 function classify(low: string, p: Parsed): boolean {
   if (low in MODES && !p.mode) return (p.mode = low), true
+  if (low in ALIASES && !p.mode) return (p.mode = ALIASES[low].mode), (p.variant = ALIASES[low].variant), true
+  if (low in VARIANTS && !p.variant && (!p.mode || p.mode === VARIANTS[low].mode)) return (p.mode = VARIANTS[low].mode), (p.variant = low), true
   if ((DOMAINS as readonly string[]).includes(low) && (!p.domain || p.domain === p.skill)) return (p.domain = low), true
   const cap = /^(\d+(?:\.\d+)?)(k|m)$/.exec(low)
   if (cap) return (p.cap = Math.round(Number(cap[1]) * (cap[2] === 'k' ? 1e3 : 1e6))), true
@@ -72,7 +82,7 @@ function classify(low: string, p: Parsed): boolean {
   return false
 }
 
-const KEYWORDS = [...Object.keys(MODES), ...DOMAINS, ...TIERS, 'unleashed']
+const KEYWORDS = [...Object.keys(MODES), ...Object.keys(ALIASES), ...Object.keys(VARIANTS), ...DOMAINS, ...TIERS, 'unleashed']
 function isPrefixOfAny(low: string) {
   return KEYWORDS.some(k => k.startsWith(low) && k !== low)
 }
@@ -83,6 +93,7 @@ export function candidates(p: Parsed): string[] {
   const pre = p.partial.toLowerCase()
   const out: string[] = []
   if (!p.mode) out.push(...Object.keys(MODES))
+  if (p.mode && !p.variant) out.push(...Object.keys(VARIANTS).filter((v) => VARIANTS[v].mode === p.mode))
   if (!p.domain || p.domain === p.skill && p.skill === 'general') out.push(...DOMAINS)
   if (!p.cap && !p.maxAgents) out.push('300k', '100')
   if (!p.tier) out.push(...TIERS)
@@ -93,8 +104,9 @@ export function candidates(p: Parsed): string[] {
 export function agentEstimate(p: Parsed): { cap: number; agents: number; capSet: boolean } | null {
   if (!p.mode) return null
   if (p.maxAgents) return { cap: p.cap ?? DEFAULT_CAP[p.mode] ?? 150_000, agents: Math.min(950, Math.max(4, p.maxAgents)), capSet: true }
-  if (p.mode === 'scale' || p.mode === 'grow') return null // count-driven modes: no clamp formula
-  const cap = p.cap ?? DEFAULT_CAP[p.mode] ?? 150_000
+  if (p.mode === 'scale') return null // count-driven (incl. rounds): no clamp formula
+  const key = p.variant ? `${p.mode}+${p.variant}` : p.mode
+  const cap = p.cap ?? DEFAULT_CAP[key] ?? DEFAULT_CAP[p.mode] ?? 150_000
   const roof = ROOF[p.mode] ?? 40
   return { cap, agents: Math.min(roof, Math.max(4, Math.floor((0.8 * cap) / 12_000))), capSet: p.cap !== undefined }
 }

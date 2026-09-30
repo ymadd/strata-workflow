@@ -1,6 +1,6 @@
 ---
 name: general
-description: Strata — a model-tiered, budget-bounded, multi-mode agent-orchestration framework. Right-sizes every agent (cheap bulk on haiku/sonnet; a thin opus layer for plan/advise/judge/audit) and caps agent count so the session never exhausts. Modes — focus (gated restraint), review (code review over a changeset: dimension reviewers → dedup → refute → verdict), sweep (codebase-wide review at scale: map → risk-ranked units → systemic critic → health grade), panel (design tournament: N approaches → judge → synthesize a winner), debate (dialectic stress-test of one proposition: positions → adversarial rebuttal rounds → moderator → integrated verdict), research (hypothesis-driven automation: frame → investigate web-grounded → refute → cited synthesis), scale (mass fan-out), grow (self-improving progressive loop), ultra (ultracode's full task arc on a leash), evolve (autonomous self-propagating development: a PM + Director grow an emergent phase plan), delegate (one heavy task executed cheap-first with a frontier fable apex that enters only on evidence of failure: retry → diagnosis-only advise → clean-slate rebuild), conduct (fable-conducted fan-out: one instruction packet routes file-disjoint units to sonnet/opus in parallel, haiku scouts, one closing integration review), debug (unknown-cause bug: reproduce → hypotheses with one discriminating experiment each → fix + regression test only on a confirmed cause → root-cause report). Use for cost-aware reviews/research/decisions/migrations, design decisions, end-to-end task completion, autonomous builds, or large generation runs that need quality without burning the budget. e.g. "/strata-workflow:general 300k <task>".
+description: Strata — a model-tiered, budget-bounded, multi-mode agent-orchestration framework. Right-sizes every agent (cheap bulk on haiku/sonnet; a thin opus layer for plan/advise/judge/audit) and caps agent count so the session never exhausts. Modes — focus (gated restraint), review (code review over a changeset: dimension reviewers → dedup → refute → verdict), sweep (codebase-wide review at scale: map → risk-ranked units → systemic critic → health grade), panel (design tournament: N approaches → judge → synthesize a winner), debate (dialectic stress-test of one proposition: positions → adversarial rebuttal rounds → moderator → integrated verdict), research (hypothesis-driven automation: frame → investigate web-grounded → refute → cited synthesis), scale (mass fan-out; `rounds` variant = self-improving goal-driven loop, formerly grow), ultra (ultracode's full task arc on a leash; `emergent` variant = autonomous PM + Director build with an emergent phase plan, formerly evolve), delegate (one heavy task executed cheap-first with a frontier fable apex that enters only on evidence of failure: retry → diagnosis-only advise → clean-slate rebuild), conduct (fable-conducted fan-out: one instruction packet routes file-disjoint units to sonnet/opus in parallel, haiku scouts, one closing integration review), debug (unknown-cause bug: reproduce → hypotheses with one discriminating experiment each → fix + regression test only on a confirmed cause → root-cause report). Use for cost-aware reviews/research/decisions/migrations, design decisions, end-to-end task completion, autonomous builds, or large generation runs that need quality without burning the budget. e.g. "/strata-workflow:general 300k <task>".
 argument-hint: "<task> — or: review 300k <task> · finance debate <claim> · (empty = menu, no mode = auto)"
 ---
 
@@ -12,7 +12,7 @@ The binding guarantees live in **code** (the bundled workflows), not prose — b
 
 > This SKILL.md is a **lean router**: the GATE, the cap math, and the tiering rules below are everything you need to *decide*. Each mode's full call signature lives in **`reference/<mode>.md`** — read that one file only when you're about to call that mode (progressive disclosure keeps activation context small as modes grow).
 
-## Thirteen modes (+ an auditor) — pick one, then read its reference
+## Eleven modes (+ two variants + an auditor) — pick one, then read its reference
 | Mode | One-liner | Reference |
 |------|-----------|-----------|
 | **focus** | restraint (default): unknown surface → small find → verify → synthesize. Opus = synth only. | `reference/focus.md` |
@@ -21,10 +21,8 @@ The binding guarantees live in **code** (the bundled workflows), not prose — b
 | **panel** | decide: N designs from DISTINCT lenses → opus panel judges on caller axes → synthesize a winner grafting runner-up ideas. | `reference/panel.md` |
 | **debate** | stress-test ONE proposition: positions open → R rounds of **adversarial rebuttal** → opus moderator extracts surviving points + cruxes → integrated verdict. Opus = moderator + synth only. | `reference/debate.md` |
 | **research** | hypothesis-driven automation: **frame** testable hypotheses → investigate (web-grounded) → **refute** the supported ones → cited synthesis. Opus = frame + synth only. | `reference/research.md` |
-| **scale** | throughput: a KNOWN work-list of N units, fanned out on a right-sized model, schema-bounded; optional opus advise pre-pass. | `reference/scale.md` |
-| **grow** | self-improving loop: auto-generate rounds (Plan → Build → Audit → Repair), grow to the cap, with /advice self-escalation + a Goal Contract. | `reference/grow.md` |
-| **ultra** | the full arc, "do the most": understand → design → build → review → synthesize, **dynamically** spawning opus advice/tie-break/critic where needed. Capped, or `unleashed`. | `reference/ultra.md` |
-| **evolve** | autonomous, self-propagating development: a **PM (opus)** owns the vision + goal-critic, a **Director (opus)** drafts an EMERGENT phase plan and at each audit can SUBDIVIDE a phase into finer ones (spawning more agents) until the vision is met. Writes real files. | `reference/evolve.md` |
+| **scale** | throughput: a KNOWN work-list of N units, fanned out on a right-sized model, schema-bounded; optional opus advise pre-pass. **Variant `rounds`** (a `goal`, a seed grid, or the old name `grow`): self-improving Plan → Build → Audit → Repair rounds with /advice self-escalation + a Goal Contract → `workflows/strata-grow.js`. | `reference/scale.md` · `reference/grow.md` |
+| **ultra** | the full arc, "do the most": understand → design → build → review → synthesize, **dynamically** spawning opus advice/tie-break/critic where needed. Capped, or `unleashed`. **Variant `emergent`** (or the old name `evolve`; opt-in, never auto-routed): a PM + Director grow an EMERGENT phase plan, subdividing risky phases until the vision is met; writes real files → `workflows/strata-evolve.js`. | `reference/ultra.md` · `reference/evolve.md` |
 | **delegate** | execute ONE heavy task cheap-first with a **frontier apex**: build (opus/sonnet) → adversarial verify → staged escalation (retry → **fable ADVISE** diagnosis-only → fable clean-slate rebuild, ≤1 each per unit). `dataSensitive` forces the apex to opus. | `reference/delegate.md` |
 | **conduct** | **fable-conducted fan-out**: haiku scouts → ONE fable instruction packet (file-disjoint units, sonnet bulk + opus hard minority) → parallel groups with a per-unit ladder (retry → opus diagnose → opus rebuild) → ONE fable integration review. Fable never executes a unit; `dataSensitive` forces it to opus. | `reference/conduct.md` |
 | **debug** | root-cause an UNKNOWN-cause bug: reproduce → rounds of hypotheses with ONE discriminating experiment each (parallel; isolated worktrees on a clean tree) → fix + regression test only on a CONFIRMED cause → adversarial verify → root-cause report. `fix:false` = diagnosis only. | `reference/debug.md` |
@@ -50,16 +48,17 @@ Modes are **verbs** (decide, judge, test); domains are **contexts** (finance, ma
 Pick exactly one. **Default is SOLO.**
 - **SOLO (no workflow):** conversational turn / a single file you've already located / a <~30-line mechanical change / answerable from current context. → **If you can name the files up front, you don't need a workflow.**
 - **SMALL FAN-OUT (2–4 haiku agents inline, no template, no judge panel):** a handful of independent, bounded lookups.
-- **A MODE (call one of the workflows):** when the task matches a mode above AND the breadth/structure justifies the fan-out — focus/review/sweep/panel/debate/research/scale/grow/ultra/evolve/delegate/conduct/debug.
+- **A MODE (call one of the workflows):** when the task matches a mode above AND the breadth/structure justifies the fan-out — focus/review/sweep/panel/debate/research/scale/ultra/delegate/conduct/debug (variants: scale rounds, ultra emergent).
 
 **When unsure, go SOLO.** This is the deliberate inversion of ultracode's "workflow on every substantive task" — breadth-of-evidence is the trigger, not "substantiveness."
 
 ## On activation
 1. **Classify the leading tokens — by what they MATCH, not by position** (this kills the old `[cap][domain][mode]` parse-order hazard where `debate finance 300k` and `300k finance debate` parsed differently). Walk the leading tokens; each one self-identifies, in any order, until the free-text task begins:
-   - matches a **mode name** (`focus`/`review`/`sweep`/`panel`/`debate`/`research`/`scale`/`grow`/`ultra`/`evolve`/`delegate`/`conduct`/`debug`) → that's the **mode**.
+   - matches a **mode name** (`focus`/`review`/`sweep`/`panel`/`debate`/`research`/`scale`/`ultra`/`delegate`/`conduct`/`debug`) → that's the **mode**.
+   - matches a **variant** — `rounds` (with `scale`), `emergent` (with `ultra`) — or an **old mode name kept as an alias**: `grow` ≡ `scale rounds`, `evolve` ≡ `ultra emergent`. The variant picks the script: `scale` → `strata-scale.js`, `scale rounds` → `strata-grow.js`; `ultra` → `strata-ultra.js`, `ultra emergent` → `strata-evolve.js`. `scale` with a `goal` or a seed grid in the task also means `rounds`.
    - matches a file in **`reference/domains/`** (e.g. `finance`, `code`) → that's the **domain**.
    - **k/m-suffixed** number (`120k`/`1m`) → **token cap** → `args.cap` (default 150k). A **bare integer** (`100`) → **agent-count cap** → `args.maxAgents` (overrides the token-derived clamp; may exceed a mode's soft roof, bounded `[FLOOR, 950]`; **alone it also lifts the soft token budget** so agent count is the sole bind — a k/m cap alongside re-imposes it; the hard `budget.total` always applies).
-   - `unleashed` (alias `nocap`) → `args.unleashed = true` (lifts the soft token budget on **`ultra`/`evolve` only**).
+   - `unleashed` (alias `nocap`) → `args.unleashed = true` (lifts the soft token budget on **`ultra` and its `emergent` variant only**).
    - anything else → the **task** starts here; stop classifying.
    **No mode token + a task present → AUTO-ROUTE in step 4** (the router picks; explicit caller tokens always win). Mode names and domain names are disjoint sets, so classification is unambiguous; no mode name is numeric, so a bare integer is always a cap.
 2. **Bare invocation → print the menu, don't guess.** If there's no task (just `/strata-workflow`, or only a cap/domain with no task text), print the **Bare-invocation menu** block below **verbatim** (it carries the mode cheat-sheet, the domain/cap syntax, and copy-paste examples), then ask which mode + task. Never invent a task.
@@ -67,11 +66,11 @@ Pick exactly one. **Default is SOLO.**
 4. **Pick the mode.** If the caller named one, use it. Otherwise **AUTO-ROUTE**: apply the GATE first (SOLO / small fan-out still win — auto-route never overrides the GATE), then classify the task by what it IS:
    - scrutinize a KNOWN diff / PR / branch → **review** · audit the whole codebase → **sweep**
    - choose between N designs/options → **panel** · stress-test ONE go/no-go claim → **debate** · investigate a question, web-grounded hypotheses → **research**
-   - mass-produce over a KNOWN work-list → **scale** · the same but self-improving rounds → **grow**
+   - mass-produce over a KNOWN work-list → **scale** · the same but self-improving rounds toward a goal → **scale rounds**
    - a bug whose CAUSE is unknown (flaky, intermittent, "worked yesterday", wrong output with no obvious culprit) → **debug** · the fix is already known → delegate
    - ONE heavy implementation, sequential / won't split → **delegate** · an implementation that splits into file-disjoint parallel units → **conduct** · the WHAT itself needs design exploration before building → **ultra**
    - none of these with confidence → **focus** (the restraint default — when unsure, route down, not up).
-   **Auto-route guardrails:** (a) **never auto-route to `evolve`** — the 500k autonomous mode is opt-in: if the task reads like "build this whole vision autonomously", propose evolve and wait for a yes; (b) routing into a fable mode (`delegate`/`conduct`) with signs of client/PII/financial data in the task → set `dataSensitive: true` (delegation-spec §2 第0分岐); (c) auto-route never invents a cap — the mode's `DEFAULT_CAP` binds unless the caller set one; (d) announce the route + a one-clause reason (step 5) BEFORE invoking, so a misroute is catchable at the permission prompt; (e) **ground review/sweep/code-focus in intent + conventions** — when the change arose from THIS session's dialogue, pass the relevant intent/requirements as `conversation` (subagents can't see the parent session), and leave `conventions` default-on (review/sweep auto-read `CLAUDE.md`/`AGENTS.md`; for `focus` on a codebase task set `conventions:true`). Both add a convention/intent-adherence lens so the review judges fidelity-to-ask, not just the diff.
+   **Auto-route guardrails:** (a) **never auto-route to `ultra emergent` (evolve)** — the 500k autonomous mode is opt-in: if the task reads like "build this whole vision autonomously", propose evolve and wait for a yes; (b) routing into a fable mode (`delegate`/`conduct`) with signs of client/PII/financial data in the task → set `dataSensitive: true` (delegation-spec §2 第0分岐); (c) auto-route never invents a cap — the mode's `DEFAULT_CAP` binds unless the caller set one; (d) announce the route + a one-clause reason (step 5) BEFORE invoking, so a misroute is catchable at the permission prompt; (e) **ground review/sweep/code-focus in intent + conventions** — when the change arose from THIS session's dialogue, pass the relevant intent/requirements as `conversation` (subagents can't see the parent session), and leave `conventions` default-on (review/sweep auto-read `CLAUDE.md`/`AGENTS.md`; for `focus` on a codebase task set `conventions:true`). Both add a convention/intent-adherence lens so the review judges fidelity-to-ask, not just the diff.
    **fable (restored 2026-10-01, Fable 5.1 — see delegation-spec §0b):** the apex/orchestrator tier runs on fable again (`FABLE_HALTED = false` in `strata-delegate.js` / `strata-conduct.js`); it bills usage credits, stays spend-gated by the literal caps, and `dataSensitive` still forces opus. If fable becomes unavailable, flip both flags to `true` (apex/orch forced to opus; everything else unchanged).
    Read the mode's **`reference/<mode>.md`** for the exact call signature before invoking — do NOT guess args from memory.
 5. Print one line before starting (makes the tiering AND the routing visible):
@@ -84,7 +83,7 @@ Pick exactly one. **Default is SOLO.**
 ```
 Strata — pick a mode, add an optional domain + cap, then your task.
 Order-independent; everything except the task is optional.
-No mode? The router auto-picks one from the task (announced before running; evolve is never auto-picked).
+No mode? The router auto-picks one from the task (announced before running; `ultra emergent` is never auto-picked).
 
 MODES (the verb — what to do)
   focus     unknown surface → small find → verify        (default; does the least)
@@ -94,15 +93,15 @@ MODES (the verb — what to do)
   debate    one claim → adversarial rebuttal → verdict   (stress-test a proposition)
   research  hypotheses → web-grounded investigate → cited synthesis
   scale     mass fan-out over a KNOWN work-list
-  grow      self-improving Plan→Build→Audit→Repair loop
+            + rounds: self-improving Plan→Build→Audit→Repair toward a goal (was: grow)
   ultra     the full task arc (understand→build→synth), capped
-  evolve    autonomous build; a PM + Director grow the plan, writes real files
+            + emergent: autonomous build, a PM + Director grow the plan (was: evolve; opt-in)
   delegate  ONE heavy task: cheap-first build → verify → escalate to the fable apex
   conduct   fable conducts a FAN-OUT: 1 packet → parallel sonnet/opus units → 1 review
   debug     unknown-cause bug: repro → hypotheses + experiments → fix only on a confirmed cause
 
 DOMAIN (optional context):  code · finance · security
-CAP (optional):  300k or 1m = token cap · 100 = agent-count cap · unleashed = drop the token cap (ultra/evolve)
+CAP (optional):  300k or 1m = token cap · 100 = agent-count cap · unleashed = drop the token cap (ultra, incl. emergent)
 TIER hint (optional):  cheap | hard   (hard = spend opus where it pays, e.g. debate's rebuttal)
 
 EXAMPLES (copy one, edit the task)

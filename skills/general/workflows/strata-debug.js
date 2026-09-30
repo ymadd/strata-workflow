@@ -189,7 +189,7 @@ let repro = null
 if (canSpawn()) {
   spawned++
   repro = await agent(
-    `Reproduce this bug. Do NOT fix anything and do NOT edit tracked files — find the smallest command or test that shows the symptom, run it, and quote what it prints. Also run \`git status --porcelain\` and report whether the tree has uncommitted changes.\n\n${sBlock}`,
+    `Reproduce this bug. Do NOT fix anything and do NOT edit tracked files — find the smallest command or test that shows the symptom, run it, and quote what it prints. Also run \`git status --porcelain\` INSIDE the project that contains the bug (not the session's working directory) and report whether it has uncommitted changes; if that project is not a git repository, report dirtyTree=true.\n\n${sBlock}`,
     { label: 'repro', phase: 'Reproduce', model: TIER.repro, effort: EFFORT.repro, schema: REPRO_SCHEMA }
   )
 }
@@ -203,7 +203,7 @@ const reproBlock = repro
   : ''
 const experimentRules = ISOLATE
   ? 'You are in an isolated git worktree: you MAY add temporary logging/asserts or bisect to run the experiment. Nothing you change here reaches the real tree.'
-  : 'You are in the REAL working tree (it has uncommitted changes, or its state is unknown): do NOT edit tracked files. Instrument via copies under a temp directory, a debugger, or extra flags only.'
+  : 'You are in the REAL working tree (it has uncommitted changes, is not a git repository, or its state is unknown): do NOT modify, create or delete ANY file in the project — tracked or not. Copy what you need to a fresh temp directory and instrument the copy, or use a debugger / extra flags. Do NOT write the fix or a regression test: that is a later stage, run only once a cause is confirmed.'
 
 // ---- Phase 2: rounds of FRAME -> TEST until a cause is confirmed ----
 const tested = new Set()
