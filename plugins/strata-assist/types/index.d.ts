@@ -19,7 +19,7 @@ export type Arm = 'haiku/low' | 'sonnet/low' | 'sonnet/medium' | 'opus/medium' |
 
 export type RouteUnit = {
   id: string
-  role: 'scout' | 'build' | 'verify'
+  role: 'scout' | 'build' | 'verify' | 'review'
   title?: string
   spec: string
   acceptance?: string

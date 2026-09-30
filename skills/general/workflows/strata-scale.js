@@ -47,6 +47,8 @@ if (!units.length || !A.task) {
 const PICK = A.model === 'haiku' || A.model === 'sonnet' || A.model === 'opus' ? A.model : 'sonnet'
 const UNIT_MODEL = PICK === 'opus' ? 'sonnet' : PICK
 const UNIT_EFFORT = UNIT_MODEL === 'haiku' ? 'low' : 'medium' // pinned: bulk units never inherit the main loop's effort
+// Jev routing gate: only when the caller passed no explicit model (an explicit A.model always wins).
+const JEV = A.jev && A.jev.route === true && typeof A.jev.tool === 'string' && A.dataSensitive !== true && !(A.model === 'haiku' || A.model === 'sonnet' || A.model === 'opus') ? A.jev : null
 
 // ---- lifetime-cap guard (harness hard cap is 1000; keep headroom) ----
 const HARD_LIMIT = 950
@@ -56,13 +58,15 @@ const ADVISE_RESERVE = A.advise !== false ? 1 : 0
 // An explicit agent-count cap (a leading bare number like `100`) lowers the lifetime ceiling so the
 // total fan-out (build units + advise) never exceeds it; absent it, HARD_LIMIT applies.
 const explicitMax = typeof A.maxAgents === 'number' && isFinite(A.maxAgents) && A.maxAgents > 0 ? Math.min(Math.floor(A.maxAgents), HARD_LIMIT) : null
-const UNIT_LIMIT = (explicitMax != null ? explicitMax : HARD_LIMIT) - ADVISE_RESERVE
+const ROUTE_RESERVE = JEV ? 1 : 0 // the single route:jev relay agent
+const UNIT_LIMIT = (explicitMax != null ? explicitMax : HARD_LIMIT) - ADVISE_RESERVE - ROUTE_RESERVE
 if (units.length > UNIT_LIMIT) {
   log(`mass-fanout: ${units.length} units exceeds ${UNIT_LIMIT} (HARD_LIMIT=${HARD_LIMIT} minus ${ADVISE_RESERVE} for advise); truncating to ${UNIT_LIMIT}.`)
   units = units.slice(0, UNIT_LIMIT)
 }
 // spawned counter tracks advise + build agents for honest reporting
 let spawned = 0
+const canSpawn = () => !overCap() && spawned < (explicitMax != null ? explicitMax : HARD_LIMIT)
 
 // ---- best-effort token ceiling (baseline-corrected; in SCALE mode the COUNT is the real knob) ----
 const spentNow = () => {
@@ -126,6 +130,52 @@ if (ADVISE) {
   log(`advise: ${advisory ? `brief ready (${ADV_MODEL}), injecting into all ${units.length} workers` : 'advisor returned nothing; proceeding without'}`)
 }
 
+// ---- Jev routing (optional): ONE (model, effort) proposal for the homogeneous unit template ----
+// Scripts can't reach the network, so the mod flags args.jev and serves a route tool; ONE haiku relay calls it.
+// Units are homogeneous and numerous, so route once and apply to every build unit. Jev only PROPOSES:
+// opus is never a per-unit model at scale (charter), so routeOk rejects it. Failure → static tiers, unchanged.
+const ROUTE_RELAY_MODEL = 'haiku' // a copy-through relay: no judgment of its own
+const ROUTE_BAND = { build: { haiku: ['low'], sonnet: ['low', 'medium'] } }
+const routeOk = (role, r) => !!(r && ROUTE_BAND[role] && ROUTE_BAND[role][r.model] && ROUTE_BAND[role][r.model].includes(r.effort))
+const ROUTE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    routes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, role: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' }, reason: { type: 'string' } },
+        required: ['id', 'role', 'reason'],
+      },
+    },
+  },
+  required: ['routes'],
+}
+const routing = { used: false, runId: JEV ? JEV.runId || null : null, template: null }
+let routed = null
+if (JEV && canSpawn()) {
+  spawned++
+  const payload = {
+    mode: 'scale',
+    runId: JEV.runId,
+    units: [{ id: 'template', role: 'build', spec: `${A.task}\n\nExample unit spec: ${JSON.stringify(units[0])}` }],
+  }
+  const relay = overCap() ? null : await agent(
+    `Load the tool ${JEV.tool} with ToolSearch (query "select:${JEV.tool}"), call it ONCE with exactly the input below, and return its "routes" array unchanged. Do nothing else.\n\nInput:\n${JSON.stringify(payload)}`,
+    { label: 'route:jev', phase: 'Plan', model: ROUTE_RELAY_MODEL, effort: 'low', schema: ROUTE_SCHEMA }
+  )
+  const r = (relay && Array.isArray(relay.routes) ? relay.routes : []).find((x) => x && x.id === 'template' && x.role === 'build')
+  if (routeOk('build', r)) {
+    routed = { model: r.model, effort: r.effort }
+    routing.used = true
+    routing.template = { model: r.model, effort: r.effort, reason: r.reason }
+  }
+  log(routed ? `route: Jev routed all ${units.length} units to ${routed.model}/${routed.effort}` : `route: Jev gave no usable proposal — static ${UNIT_MODEL}/${UNIT_EFFORT}`)
+}
+const BUILD_MODEL = routed ? routed.model : UNIT_MODEL
+const BUILD_EFFORT = routed ? routed.effort : UNIT_EFFORT
+
 // ---- BUILD: one agent per unit, STREAMED via pipeline (no barrier) ----
 phase('Build')
 let done = 0
@@ -141,7 +191,7 @@ const results = await pipeline(units, (unit, _orig, index) => {
     `${A.task}\n\n${INSTRUCTIONS}${advisory}\n\nUnit spec (build exactly this; make it distinct from siblings): ${JSON.stringify(
       unit
     )}\nUnit index: ${index}.`,
-    { label: `build:${index}`, phase: 'Build', model: UNIT_MODEL, effort: UNIT_EFFORT, schema: SCHEMA }
+    { label: `build:${index}`, phase: 'Build', model: BUILD_MODEL, effort: BUILD_EFFORT, schema: SCHEMA }
   ).then((r) => {
     done++
     if (done % 25 === 0) log(`built ${done}/${units.length} (~${Math.max(0, spentNow() - startSpent)} tok this run)`)
@@ -151,4 +201,4 @@ const results = await pipeline(units, (unit, _orig, index) => {
 
 const built = results.filter(Boolean)
 log(`mass-fanout done: ${built.length}/${units.length} built, ${spawned} agents, ~${Math.max(0, spentNow() - startSpent)} output tokens this run`)
-return { task: A.task, model: UNIT_MODEL, requested: units.length, built: built.length, agentsSpawned: spawned, units: built }
+return { task: A.task, model: BUILD_MODEL, routing, requested: units.length, built: built.length, agentsSpawned: spawned, units: built }

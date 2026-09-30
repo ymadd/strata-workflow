@@ -25,6 +25,11 @@ const h = decide(b('sonnet'), J('haiku/low', 0.7, 0.5)); assert.equal(h.model, '
 assert.match(decide(b('sonnet'), J('opus/high', 0.95, 3)).reason, /upgrade:sonnet→opus/)
 // jev failure → no model (script falls back to static)
 assert.equal(decide(b('sonnet'), null).model, undefined)
+// review band: haiku clamped up to sonnet/low; opus/high clamped down to opus/medium; plannerTier ignored
+const r = (plannerTier?: 'sonnet' | 'opus') => ({ id: 'R', role: 'review' as const, spec: 'x', plannerTier })
+const r1 = decide(r(), J('haiku/low', 0.9)); assert.deepEqual([r1.model, r1.effort], ['sonnet', 'low']); assert.match(r1.reason, /clamped:haiku\/low/)
+const r2 = decide(r(), J('opus/high', 0.9)); assert.deepEqual([r2.model, r2.effort], ['opus', 'medium']); assert.match(r2.reason, /clamped:opus\/high/)
+const r3 = decide(r('opus'), J('sonnet/low', 0.9, 1)); assert.deepEqual([r3.model, r3.effort, r3.reason], ['sonnet', 'low', 'jev'])
 console.log('all route policy tests pass')
 // tuned policy is honoured: stricter downgrade threshold keeps the planner tier at confidence 0.82
 const strict = { version: 1, LOW_CONFIDENCE: 0.4, DOWNGRADE_MIN_CONFIDENCE: 0.85, DOWNGRADE_MAX_BLAST: 2 }

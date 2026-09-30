@@ -19,6 +19,7 @@ export const BAND: Record<string, Arm[]> = {
   scout: ['haiku/low', 'sonnet/low'],
   build: ['haiku/low', 'sonnet/low', 'sonnet/medium', 'opus/medium', 'opus/high'],
   verify: ['sonnet/low', 'sonnet/medium', 'opus/medium'],
+  review: ['sonnet/low', 'sonnet/medium', 'opus/medium'],
 }
 
 export const LOW_CONFIDENCE = 0.4 // below: step one arm up inside the band

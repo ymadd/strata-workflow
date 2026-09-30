@@ -19,7 +19,7 @@ const TIMEOUT_MS = 3000
 type Ctx = { seq: number; cache: Map<string, Route> }
 
 const ROUTE_TOOL = 'mcp__strata-assist__route'
-const ROUTED_WORKFLOWS = /strata-(conduct|delegate)(\.js)?$/
+const ROUTED_WORKFLOWS = /strata-(conduct|delegate|review|sweep|scale)(\.js)?$/
 
 // One Jev System One call with a hard deadline; null on any failure (callers fall back, never block).
 async function jevPost($: Engine, key: string, body: unknown): Promise<any | null> {
@@ -177,7 +177,7 @@ export const register: Register = on => {
             items: {
               type: 'object',
               properties: {
-                id: { type: 'string' }, role: { type: 'string', enum: ['scout', 'build', 'verify'] }, title: { type: 'string' },
+                id: { type: 'string' }, role: { type: 'string', enum: ['scout', 'build', 'verify', 'review'] }, title: { type: 'string' },
                 spec: { type: 'string' }, acceptance: { type: 'string' }, own: { type: 'array', items: { type: 'string' } },
                 plannerTier: { type: 'string', enum: ['sonnet', 'opus'] },
               },

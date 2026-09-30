@@ -10,7 +10,7 @@ export const meta = {
   ],
 }
 
-// ---- args: { root?, scope?, focus?, dimensions?, exclude?, partitionHint?, severityFloor?, verifyFloor?, maxUnits?, cap?, tierHint? } ----
+// ---- args: { root?, scope?, focus?, dimensions?, exclude?, partitionHint?, severityFloor?, verifyFloor?, maxUnits?, cap?, tierHint?, jev?, dataSensitive? } ----
 // The workflow runtime threads `args` to the script as a JSON STRING, so normalize it here.
 const A = (() => {
   if (typeof args === 'string') {
@@ -301,6 +301,58 @@ const CONTEXT_BLOCK =
   CONV_BLOCK +
   (FOCUS ? `\nREVIEWER FOCUS: ${FOCUS}\n` : '')
 
+// ---- Jev routing (optional): per-unit review (model, effort) proposals from the strata-assist mod ----
+// ONE haiku relay calls the mod's route tool for the review units; Jev only PROPOSES — the band below is
+// re-enforced here (never fable, never haiku). No flag, dataSensitive, tierHint:'cheap', or any failure → static tiers.
+const JEV = A.jev && A.jev.route === true && typeof A.jev.tool === 'string' && A.dataSensitive !== true ? A.jev : null
+const ROUTE_RELAY_MODEL = 'haiku' // a copy-through relay: no judgment of its own
+const ROUTE_BAND = { review: { sonnet: ['low', 'medium'], opus: ['medium'] } }
+const routeOk = (role, r) => !!(r && ROUTE_BAND[role] && ROUTE_BAND[role][r.model] && ROUTE_BAND[role][r.model].includes(r.effort))
+const ROUTE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    routes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, role: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' }, reason: { type: 'string' } },
+        required: ['id', 'role', 'reason'],
+      },
+    },
+  },
+  required: ['routes'],
+}
+const ROUTE_MAX_UNITS = 40
+const routing = { used: false, runId: JEV ? JEV.runId || null : null, units: [] }
+if (JEV && A.tierHint !== 'cheap' && canSpawn()) {
+  spawned++
+  const routed = unitsToReview.slice(0, ROUTE_MAX_UNITS)
+  const staticUnits = unitsToReview.slice(ROUTE_MAX_UNITS)
+  if (staticUnits.length) log(`route: ${staticUnits.length} units beyond the first ${ROUTE_MAX_UNITS} stay static (${staticUnits.map((u) => u.id).join(', ')})`)
+  const payload = {
+    mode: 'sweep',
+    runId: JEV.runId,
+    units: routed.map((u) => ({ id: u.id, role: 'review', title: u.id, spec: `Review scope: ${u.paths.join(', ')}. Risk ${u.risk ?? '?'}: ${u.reason || ''}` })),
+  }
+  const relay = await agent(
+    `Load the tool ${JEV.tool} with ToolSearch (query "select:${JEV.tool}"), call it ONCE with exactly the input below, and return its "routes" array unchanged. Do nothing else.\n\nInput:\n${JSON.stringify(payload)}`,
+    { label: 'route:jev', phase: 'Map', model: ROUTE_RELAY_MODEL, effort: 'low', schema: ROUTE_SCHEMA }
+  )
+  const byKey = new Map((relay && Array.isArray(relay.routes) ? relay.routes : []).map((r) => [`${r.role}:${r.id}`, r]))
+  for (const u of routed) {
+    const r = byKey.get(`review:${u.id}`)
+    if (routeOk('review', r)) u.exec = { model: r.model, effort: r.effort, reason: r.reason }
+  }
+  routing.used = byKey.size > 0
+  routing.units = routed.map((u) => ({ id: u.id, review: u.exec || null }))
+  log(
+    routing.used
+      ? `route: Jev routed ${routed.filter((u) => u.exec).length}/${routed.length} reviews — ` + routed.map((u) => `${u.id}=${u.exec ? `${u.exec.model}/${u.exec.effort}` : TIER.review}`).join(' ')
+      : 'route: Jev relay returned nothing — static tiers'
+  )
+}
+
 // ---- Phase 2: REVIEW — pipelined per unit: review (sonnet) THEN severity-gated verify, no barrier between units ----
 phase('Review')
 const reviewUnit = (unit) => {
@@ -315,7 +367,7 @@ const reviewUnit = (unit) => {
       `\nUNIT: ${unit.id}  (risk ${unit.risk ?? '?'} — ${unit.reason || ''})\nFILES:\n${unit.paths.map((p) => `- ${p}`).join('\n')}\n\n` +
       `DIMENSIONS:\n${DIM_LINE}\n\n` +
       `Report only concrete, real issues — each MUST cite file:line in location and quote the offending code in evidence. An empty findings list is valid for clean code; do not invent issues to fill a quota.`,
-    { label: `review:${unit.id}`, phase: 'Review', model: TIER.review, effort: EFFORT.review, schema: FINDINGS_SCHEMA }
+    { label: `review:${unit.id}`, phase: 'Review', model: unit.exec ? unit.exec.model : TIER.review, effort: unit.exec ? unit.exec.effort : EFFORT.review, schema: FINDINGS_SCHEMA }
   ).then((r) => ({ unit, findings: (r && r.findings ? r.findings : []).filter((f) => f && f.title && f.location) }))
 }
 const verifyUnit = (reviewed, unit) => {
@@ -467,6 +519,7 @@ return {
   unitsTotal: allUnits.length,
   unitsDeepReviewed: unitsToReview.length,
   unitsDeferred: unitsSkipped.map((u) => u.id),
+  routing,
   confirmedCount: confirmed.length,
   blockingCount,
   healthGrade: synthesis.healthGrade,

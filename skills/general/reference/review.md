@@ -27,6 +27,7 @@ Workflow({
 })
 ```
 
+- **Jev routing (optional, via the `strata-assist` mod):** with the mod installed and a TypeSafe key set, ONE haiku relay routes each dimension reviewer to a `(model, effort)` inside `sonnet/low · sonnet/medium · opus/medium` (never haiku, never fable). Verify and synth are never routed; `tierHint:'cheap'` and `dataSensitive` skip routing. The run returns `routing`.
 - **Grounding (CLAUDE.md + conversation):** by default the cheap scope agent also reads the repo's `CLAUDE.md`/`AGENTS.md` and distills the conventions every reviewer is then held to (no extra agent — folded into the scope pass). Pass `conversation` to feed the intent/requirements the change must satisfy; reviewers then check **intent-fidelity** (did it do what was asked — nothing missed, nothing extra) alongside the diff. Whenever either is present, a **convention & intent adherence** lens is inserted right after correctness/security so it survives the finder cap. As the caller you usually already hold `CLAUDE.md` and the dialogue — pass them in rather than relying solely on the auto-read.
 - **Reviewers are sonnet (not haiku)** — finding real bugs needs reasoning over the code, not cheap scanning. Opus is reserved for the final verdict only; verify stays sonnet (or opus under `tierHint:"hard"`).
 - The scope is resolved by the agents themselves (they have Bash/Read): they run `git diff` / `gh pr diff` or read the named paths. **For diff/PR/default scope, invoke from the target repo.**

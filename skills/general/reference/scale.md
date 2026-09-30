@@ -23,6 +23,7 @@ Workflow({
 
 ## Scale quality pipeline: ADVISE → BUILD → AUDIT → REPAIR
 A **thin opus layer** wraps the cheap bulk (opus stays a few % of total).
+- **Jev routing (optional, via the `strata-assist` mod):** units are homogeneous, so ONE route is made for the unit template and applied to every build unit, inside `haiku/low · sonnet/low · sonnet/medium` (opus is never a per-unit model at scale). An explicit `model` arg or `dataSensitive` skips routing. The run returns `routing`.
 - **ADVISE (opus ×1, pre-pass):** `strata-scale`'s `advise` (default on). One opus brief — quality bar, pitfalls, best practices, consistency rules — injected into every cheap worker. The single opus cost is amortized over N, lifting each worker toward expert level.
 - **BUILD (sonnet × N):** schema-bounded right-sized fan-out.
 - **AUDIT (opus):** call `strata-audit.js`. Each auditor reads ONE pre-split batch file (cheap input), grades each unit, flags broken/dup/off-spec; an opus meta-critic returns systemic issues + `regenerateIds`.

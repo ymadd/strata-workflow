@@ -101,7 +101,12 @@ const startSpent = spentNow()
 const UNCAP_TOKENS = explicitMax != null && !(typeof A.cap === 'number' && A.cap > 0)
 const overBudget = () => (UNCAP_TOKENS ? false : spentNow() - startSpent >= SOFT)
 const mustReserve = () => remainingNow() < RESERVE // keep room for the closing integration review
-const canSpawn = () => spawned < MAX_AGENTS && !overBudget()
+// One agent slot is held back for the closing integration review: without it, retries on a small
+// cap can spend the last slot and the run ends unreviewed (observed 2026-10-01: 4 units at the
+// default 200k cap → MAX_AGENTS=10 exhausted, review skipped).
+const REVIEW_SLOT = ORCH_REVIEW_MAX
+const canSpawn = () => spawned < MAX_AGENTS - REVIEW_SLOT && !overBudget()
+const canSpawnReview = () => spawned < MAX_AGENTS && !overBudget()
 
 log(
   `Strata/conduct: cap=${CEIL} (${candidates.length ? 'set' : 'default'}), MAX_AGENTS=${MAX_AGENTS}` +
@@ -117,7 +122,7 @@ const orchAgent = async (prompt, opts) => {
   const first = await agent(prompt, { ...opts, model: ORCH_MODEL, effort: 'high' })
   if (first !== null) return first
   if (ORCH_MODEL === 'opus') return null
-  if (!canSpawn()) return null
+  if (!canSpawnReview()) return null
   spawned++
   const optLabel = (opts && opts.label) || 'orch'
   log(`orchestrator tier unavailable for "${optLabel}" — falling back to opus`)
@@ -533,7 +538,7 @@ phase('Review')
 let review = null
 let orchReviews = 0
 const done = results.filter((r) => r.status === 'done').length
-if (ORCH_REVIEW_MAX > 0 && done > 0 && canSpawn()) {
+if (ORCH_REVIEW_MAX > 0 && done > 0 && canSpawnReview()) {
   spawned++
   orchReviews++
   review = await orchAgent(

@@ -24,6 +24,7 @@ Workflow({
 })
 ```
 
+- **Jev routing (optional, via the `strata-assist` mod):** ONE haiku relay routes each risk-ranked review unit (first 40; the rest stay static and are logged) to `sonnet/low · sonnet/medium · opus/medium`. Verify, the systemic critic and synthesis are never routed; `tierHint:'cheap'` and `dataSensitive` skip routing. The run returns `routing`.
 - **Coverage is the budget knob, and it is honest:** units are ranked by risk and the top N (within the agent counter) get deep review; any deferred units are named in the result and the `coverageNote`, never silently dropped. **Invoke from the repo root** (or set `root`) — the map/review agents run `git ls-files` / `rg` / read files themselves.
 - **Grounding (CLAUDE.md + conversation):** the map already infers conventions from the code; by default it now ALSO reads the repo's `CLAUDE.md`/`AGENTS.md` and merges them (stated taking precedence) so reviewers and the systemic critic hold the codebase to the project's *declared* standards, surfacing convention drift across modules. Pass `conversation` to ground the audit in why it's being run. Either grounding adds an **adherence** lens to every per-unit reviewer at no extra agent cost.
 - **The systemic critic is the payoff of seeing the whole codebase:** it surfaces what no single-file reviewer can — repeated anti-patterns, a missing validation/auth/error layer, divergent handling of one concern across modules.

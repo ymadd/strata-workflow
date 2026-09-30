@@ -496,21 +496,29 @@ for other in "${WF}"/strata-*.js; do
 done
 [[ "$fable_leak" -eq 0 ]] && PASS "fable containment: no other mode references the apex tier"
 
-# Jev routing (conduct/delegate): Jev only PROPOSES (model, effort); the script re-enforces bands.
-# (a) gated off by dataSensitive  (b) proposals pass routeOk before use  (c) verify band never haiku
-# (d) no apex tier in the route band  (e) conduct: routed upgrades are bounded by OPUS_UNIT_CAP
-for f in strata-conduct.js strata-delegate.js; do
+# Jev routing (conduct/delegate/review/sweep/scale): Jev only PROPOSES (model, effort); each script
+# re-enforces its band. (a) gated off by dataSensitive  (b) proposals pass routeOk before use
+# (c) no apex tier in any ROUTE_BAND  (d) verify band never haiku  (e) scale band never opus (charter)
+for f in strata-conduct.js strata-delegate.js strata-review.js strata-sweep.js strata-scale.js; do
   F="${WF}/${f}"
   m="${f%.js}"; m="${m#strata-}"
-  grep_require "$F" "A\.dataSensitive !== true \? A\.jev : null" "${m}: Jev routing disabled under dataSensitive"
-  grep_require "$F" "routeOk\('build', b\)"                     "${m}: routed build proposals pass routeOk before use"
-  grep_require "$F" "verify: \{ sonnet: \['low', 'medium'\], opus: \['medium'\] \}" "${m}: verify route band is sonnet|opus only (never haiku)"
+  grep_require "$F" "const JEV = .*A\.dataSensitive !== true"   "${m}: Jev routing disabled under dataSensitive"
+  grep_require "$F" "routeOk\('(build|review)', [a-z]\)"         "${m}: routed proposals pass routeOk before use"
   if sed -n '/const ROUTE_BAND = {/,/^}/p' "$F" | grep -q "fable"; then
     FAIL "${m}: ROUTE_BAND names the apex tier"
   else
     PASS "${m}: ROUTE_BAND never names the apex tier"
   fi
 done
+for f in strata-conduct.js strata-delegate.js; do
+  grep_require "${WF}/${f}" "verify: \{ sonnet: \['low', 'medium'\], opus: \['medium'\] \}" "${f%.js}: verify route band is sonnet|opus only (never haiku)"
+done
+if grep -E "^const ROUTE_BAND" "${WF}/strata-scale.js" | grep -q "opus"; then
+  FAIL "scale: ROUTE_BAND allows opus as a per-unit model"
+else
+  PASS "scale: ROUTE_BAND never allows opus per unit"
+fi
+grep_require "${WF}/strata-conduct.js" "canSpawn = \(\) => spawned < MAX_AGENTS - REVIEW_SLOT" "conduct: an agent slot is reserved for the integration review"
 grep_require "${WF}/strata-conduct.js" "opusUnits >= OPUS_UNIT_CAP" "conduct: routed opus upgrades bounded by OPUS_UNIT_CAP"
 
 # Effort pinned per role: no agent may silently inherit the main loop's (often high/xhigh) effort.

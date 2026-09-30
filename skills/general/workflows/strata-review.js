@@ -249,6 +249,63 @@ log(`review: grounding — conversation=${!!CONVERSATION}, conventions=${CONVENT
 const dimSource = groundOn ? [...baseDims.slice(0, 2), ADHERENCE_DIM, ...baseDims.slice(2)] : baseDims
 const DIMS = dimSource.slice(0, FINDERS)
 
+// ---- Jev routing (optional): per-dimension reviewer (model, effort) proposals from the strata-assist mod ----
+// Scripts can't reach the network, so the mod flags args.jev before the run and serves a route tool;
+// ONE haiku relay calls it for every dimension. Jev only PROPOSES — this block re-enforces the review band
+// (never haiku, never fable). tierHint:'cheap' skips routing. Verify/synth are never routed.
+// No flag, dataSensitive, or any failure -> the static TIER/EFFORT above, unchanged.
+const JEV = A.jev && A.jev.route === true && typeof A.jev.tool === 'string' && A.dataSensitive !== true && A.tierHint !== 'cheap' ? A.jev : null
+const ROUTE_RELAY_MODEL = 'haiku' // a copy-through relay: no judgment of its own
+const ROUTE_BAND = { review: { sonnet: ['low', 'medium'], opus: ['medium'] } }
+const routeOk = (role, r) => !!(r && ROUTE_BAND[role] && ROUTE_BAND[role][r.model] && ROUTE_BAND[role][r.model].includes(r.effort))
+const ROUTE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    routes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, role: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' }, reason: { type: 'string' } },
+        required: ['id', 'role', 'reason'],
+      },
+    },
+  },
+  required: ['routes'],
+}
+const routing = { used: false, runId: JEV ? JEV.runId || null : null, units: [] }
+const reviewRoute = new Map()
+if (JEV && canSpawn()) {
+  spawned++
+  const payload = {
+    mode: 'review',
+    runId: JEV.runId,
+    units: DIMS.map((dim) => ({
+      id: dim.split(' ')[0],
+      role: 'review',
+      spec: `${dim}${scope.overview ? ` — change scope: ${String(scope.overview).slice(0, 400)}` : ''}`,
+    })),
+  }
+  const relay = await agent(
+    `Load the tool ${JEV.tool} with ToolSearch (query "select:${JEV.tool}"), call it ONCE with exactly the input below, and return its "routes" array unchanged. Do nothing else.\n\nInput:\n${JSON.stringify(payload)}`,
+    { label: 'route:jev', phase: 'Review', model: ROUTE_RELAY_MODEL, effort: 'low', schema: ROUTE_SCHEMA }
+  )
+  const byKey = new Map((relay && Array.isArray(relay.routes) ? relay.routes : []).map((r) => [`${r.role}:${r.id}`, r]))
+  for (const dim of DIMS) {
+    const k = dim.split(' ')[0]
+    const r = byKey.get(`review:${k}`)
+    if (routeOk('review', r)) reviewRoute.set(k, { model: r.model, effort: r.effort, reason: r.reason })
+  }
+  routing.used = byKey.size > 0
+  routing.units = DIMS.map((dim) => ({ id: dim.split(' ')[0], review: reviewRoute.get(dim.split(' ')[0]) || null }))
+  log(
+    routing.used
+      ? `route: Jev routed ${reviewRoute.size}/${DIMS.length} reviewers — ` +
+          DIMS.map((dim) => { const k = dim.split(' ')[0]; const x = reviewRoute.get(k); return `${k}=${x ? `${x.model}/${x.effort}` : TIER.review}` }).join(' ')
+      : 'route: Jev relay returned nothing — static tiers'
+  )
+}
+
 // ---- Phase 2: REVIEW — one sonnet reviewer per dimension, each grounded in file:line ----
 phase('Review')
 const fixClause = WANT_FIX
@@ -263,7 +320,7 @@ const found = await pipeline(DIMS, (dim) => {
   return agent(
     `You are a senior reviewer examining a code change through ONE lens only: "${dim}". Ignore issues outside this lens — another reviewer covers those.\n${TARGET_NOTE}${GROUND_BLOCK}${SCOPE_BLOCK}\n${SCOPE_INSTRUCTION}\n\n` +
       `Read the actual changed code. Report only concrete, real issues — each MUST cite file:line in location and quote the offending code in evidence. Do not invent issues to fill a quota; an empty findings list is a valid result for a clean change.${fixClause}`,
-    { label: `review:${dim.split(' ')[0]}`, phase: 'Review', model: TIER.review, effort: EFFORT.review, schema: FINDINGS_SCHEMA }
+    { label: `review:${dim.split(' ')[0]}`, phase: 'Review', model: reviewRoute.has(dim.split(' ')[0]) ? reviewRoute.get(dim.split(' ')[0]).model : TIER.review, effort: reviewRoute.has(dim.split(' ')[0]) ? reviewRoute.get(dim.split(' ')[0]).effort : EFFORT.review, schema: FINDINGS_SCHEMA }
   )
 })
 
@@ -386,6 +443,7 @@ return {
   maxAgents: MAX_AGENTS,
   grounding: { conversation: !!CONVERSATION, conventions: CONVENTIONS ? (CONVENTIONS_LITERAL ? 'literal' : 'auto-CLAUDE.md') : 'none' },
   dimensionsReviewed: DIMS.length,
+  routing,
   filesInScope: fileList,
   confirmedCount: confirmed.length,
   blockingCount,

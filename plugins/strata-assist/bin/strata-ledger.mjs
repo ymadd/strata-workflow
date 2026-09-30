@@ -124,7 +124,9 @@ export function evalQuestions() {
   return {
     acceptance_unmet: flag('Judging only from `builder_report` and `verifier`, is any part of `unit.acceptance` left unmet?', 'Some acceptance criterion is not shown as met', 'Every acceptance criterion is shown as met'),
     off_target: flag('Did the work described in `builder_report` drift from what `unit.spec` asked for?', 'It changed things the spec did not ask for, or solved a different problem', 'It stays on what the spec asked'),
-    incomplete: flag('Does `builder_report` admit or imply unfinished work (TODOs, skipped cases, partial coverage)?', 'Work is left unfinished or skipped', 'Nothing is reported as left undone'),
+    // scoped to the unit's OWN spec: an honest note about checks outside the unit, or verification the builder
+    // could not run, is not unfinished work (2026-10-01: the unscoped wording flagged 4/4 verified units)
+    incomplete: flag('Is any part of what `unit.spec` asked for left unfinished according to `builder_report` (TODOs, skipped cases, partial implementation)? Notes about checks that belong to other units, or verification the builder could not run, do not count as unfinished work.', 'Some part of the requested change itself is not done', 'The requested change is done; any caveats concern checks outside the unit or unrun verification'),
     unsupported_claim: flag('Does `builder_report` claim success that `verifier` does not back with concrete evidence (tests run, files re-read)?', 'A success claim lacks verification evidence', 'Claims are backed by the verifier'),
     quality: { type: 'score', instructions: 'How well does the finished unit meet its spec, judging from the reports?', criteria: ['Failed or clearly wrong', 'Partially meets the spec with notable gaps', 'Meets the spec with minor gaps', 'Fully meets the spec with verified evidence'] },
   }
