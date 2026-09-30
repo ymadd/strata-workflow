@@ -1,0 +1,22 @@
+import { parse, candidates, agentEstimate } from './strata.ts'
+import assert from 'node:assert/strict'
+const P = (s: string) => parse(s)!
+assert.equal(parse('hello'), null)
+assert.equal(parse('/general-ish x'), null)
+let p = P('/strata-workflow:general 300k finance debate "買収すべきか"')
+assert.deepEqual([p.mode, p.domain, p.cap, p.inTask, p.task], ['debate', 'finance', 300000, true, '"買収すべきか"'])
+p = P('/strata-workflow:general deb')
+assert.equal(p.partial, 'deb'); assert.deepEqual(candidates(p), ['debate'])
+p = P('/strata-workflow:general review ')
+assert.equal(p.mode, 'review'); assert.equal(p.partial, ''); assert.ok(candidates(p).includes('300k'))
+assert.deepEqual(agentEstimate(p), { cap: 150000, agents: 10, capSet: false })
+p = P('/strata-workflow:general security 100 sweep ./src')
+assert.deepEqual([p.domain, p.maxAgents, p.mode, p.task], ['security', 100, 'sweep', './src'])
+assert.equal(agentEstimate(p)!.agents, 100)
+p = P('/strata-workflow:code review the current branch')
+assert.deepEqual([p.skill, p.domain, p.mode, p.task], ['code', 'code', 'review', 'the current branch'])
+p = P('/strata-workflow:general このブランチを見て')
+assert.equal(p.mode, undefined); assert.equal(p.inTask, true)
+p = P('/general 1m ultra x'); assert.equal(agentEstimate(p)!.agents, 66)
+p = P('/strata-workflow:general d') ; assert.ok(candidates(p).includes('debate') && candidates(p).includes('delegate'))
+console.log('all parse tests pass')
