@@ -54,14 +54,14 @@ REQUIRED_SCRIPTS=(
   strata-focus.js strata-review.js strata-sweep.js strata-panel.js
   strata-scale.js strata-grow.js   strata-ultra.js strata-evolve.js
   strata-debate.js strata-research.js
-  strata-delegate.js strata-conduct.js
+  strata-delegate.js strata-conduct.js strata-debug.js
   strata-audit.js
 )
 REQUIRED_REFS=(
   focus.md review.md sweep.md panel.md
   scale.md grow.md  ultra.md evolve.md
   debate.md research.md
-  delegate.md conduct.md
+  delegate.md conduct.md debug.md
 )
 
 for s in "${REQUIRED_SCRIPTS[@]}"; do
@@ -330,6 +330,14 @@ grep_require "$F" "canSpawn\s*=\s*\(\)"      "delegate: canSpawn() gate defined"
 grep_require "$F" "canSpawn\(\)"             "delegate: canSpawn() called at agent site"
 grep_require "$F" "MAX_UNITS\s*=\s*6"        "delegate: MAX_UNITS=6 unit truncation present"
 
+# debug — AGENT_ROOF=40, HARD_LIMIT=950, canSpawn gate (one slot reserved for synthesis), bounded rounds/fixes
+F="${WF}/strata-debug.js"
+grep_require "$F" "AGENT_ROOF\s*=\s*40"      "debug: AGENT_ROOF=40 present"
+grep_require "$F" "HARD_LIMIT\s*=\s*950"     "debug: HARD_LIMIT=950 present"
+grep_require "$F" "canSpawn = \(\) => spawned < MAX_AGENTS - 1" "debug: canSpawn() gate reserves the synthesis slot"
+grep_require "$F" "FIX_ATTEMPTS\s*=\s*2"     "debug: FIX_ATTEMPTS=2 literal cap"
+grep_require "$F" "Math\.min\(typeof A\.rounds[^)]*\) : 3, 4\)" "debug: rounds bounded ≤4"
+
 # conduct — AGENT_ROOF=120 (fan-out, scale-y family), HARD_LIMIT=950, canSpawn gate + unit truncation
 F="${WF}/strata-conduct.js"
 grep_require "$F" "AGENT_ROOF\s*=\s*120"    "conduct: AGENT_ROOF=120 present"
@@ -495,6 +503,16 @@ for other in "${WF}"/strata-*.js; do
   fi
 done
 [[ "$fable_leak" -eq 0 ]] && PASS "fable containment: no other mode references the apex tier"
+
+# debug: frame/synth on opus, workers on sonnet; a fix is only attempted on a CONFIRMED cause
+F="${WF}/strata-debug.js"
+grep_require "$F" "frame:\s*'opus'"   "debug: TIER.frame=opus"
+grep_require "$F" "synth:\s*'opus'"   "debug: TIER.synth=opus"
+grep_require "$F" "test:\s*'sonnet'"  "debug: TIER.test=sonnet (experiments are bulk work)"
+grep_require "$F" "fix:\s*'sonnet'"   "debug: TIER.fix=sonnet"
+grep_require "$F" "if \(DO_FIX && confirmed\)" "debug: fix gated on a confirmed cause"
+grep_require "$F" "repro\.dirtyTree === false" "debug: worktree isolation only on a clean tree"
+grep_require "$F" "canExperiment = \(\) => spawned < MAX_AGENTS - 1 - FIX_RESERVE" "debug: experiments leave slots for fix + verify"
 
 # Jev routing (conduct/delegate/review/sweep/scale): Jev only PROPOSES (model, effort); each script
 # re-enforces its band. (a) gated off by dataSensitive  (b) proposals pass routeOk before use

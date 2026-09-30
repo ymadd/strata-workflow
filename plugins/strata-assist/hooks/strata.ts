@@ -16,6 +16,7 @@ export const MODES: Record<string, string> = {
   evolve: 'autonomous build; PM + Director grow the plan (opt-in, 500k)',
   delegate: 'ONE heavy task: cheap-first build → verify → fable apex on failure',
   conduct: 'fable conducts a fan-out of file-disjoint units',
+  debug: 'unknown-cause bug: repro → hypotheses + experiments → fix on a confirmed cause',
 }
 
 export const DOMAINS = ['code', 'finance', 'security'] as const
@@ -24,7 +25,7 @@ export const TIERS = ['cheap', 'hard'] as const
 // traced to each workflow's DEFAULT_CAP
 const DEFAULT_CAP: Record<string, number> = {
   focus: 150_000, review: 150_000, panel: 150_000, debate: 150_000, research: 150_000, ultra: 150_000,
-  sweep: 200_000, delegate: 200_000, conduct: 200_000, evolve: 500_000,
+  sweep: 200_000, delegate: 200_000, conduct: 200_000, debug: 200_000, evolve: 500_000,
 }
 const ROOF: Record<string, number> = { sweep: 120, ultra: 120, evolve: 120 }
 

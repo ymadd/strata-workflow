@@ -97,6 +97,7 @@ const EXPECTED_WORKFLOWS = [
   'strata-research.js',
   'strata-delegate.js',
   'strata-conduct.js',
+  'strata-debug.js',
   'strata-audit.js',
 ]
 
@@ -113,6 +114,7 @@ const EXPECTED_REFERENCES = [
   'research.md',
   'delegate.md',
   'conduct.md',
+  'debug.md',
   'tiering-constants.md',
 ]
 
@@ -392,6 +394,15 @@ const CAP_RULES = {
     must_contain: ['MAX_AGENTS', 'canSpawn', 'AGENT_ROOF', 'HARD_LIMIT'],
     roof_pattern: /AGENT_ROOF\s*=\s*(\d+)/,
     roof_max: 120,
+    hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
+    hard_limit_max: 950,
+    gate_fn: 'canSpawn',
+  },
+  // strata-debug.js: root-cause debugging — restraint-family roof (40); rounds ≤4 and FIX_ATTEMPTS=2 bound depth.
+  'strata-debug.js': {
+    must_contain: ['MAX_AGENTS', 'canSpawn', 'AGENT_ROOF', 'HARD_LIMIT'],
+    roof_pattern: /AGENT_ROOF\s*=\s*(\d+)/,
+    roof_max: 40,
     hard_limit_pattern: /HARD_LIMIT\s*=\s*(\d+)/,
     hard_limit_max: 950,
     gate_fn: 'canSpawn',
