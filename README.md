@@ -77,6 +77,8 @@ Strata ships as a **Claude Code plugin** (this repo is also its own marketplace)
 
 The first command registers this repo as a marketplace; the second installs the plugin (`<plugin>@<marketplace>`). Claude Code auto-discovers the bundled skill.
 
+Optional companion mod (interactive Claude Code only): `/plugin install strata-assist@strata-workflow` adds a live band that explains how a `/strata-workflow` command parses, plus Jev (TypeSafe) auto-route preview, per-unit model/effort routing for `conduct`/`delegate`, and a post-run ledger (`/strata-assist stats|tune|rate`). It needs a TypeSafe key in `TYPESAFE_API_KEY` or `~/.config/typesafe/api_key`; Strata runs unchanged without it.
+
 ### As a standalone skill
 
 Clone the skill directory straight into where Claude Code looks for skills:
