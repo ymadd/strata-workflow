@@ -85,7 +85,9 @@ async function autoIngest($: Engine) {
   const out = await ledger($, ['ingest'])
   const runs = Array.isArray(out?.ingested) ? out.ingested : []
   for (const r of runs) {
-    $.ui.toast(`Strata ${r.runId}: first-pass ${r.firstPass}/${r.units}, escalations ${r.escalations} — /strata-assist rate good|bad`)
+    const what =
+      r.kind === 'review' ? `${r.confirmed}/${r.findings} findings confirmed` : r.kind === 'scale' ? `${r.built}/${r.of} units built` : `first-pass ${r.firstPass}/${r.units}, escalations ${r.escalations}`
+    $.ui.toast(`Strata ${r.runId}: ${what} — /strata-assist rate good|bad`)
   }
 }
 

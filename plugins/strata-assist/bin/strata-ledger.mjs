@@ -83,6 +83,9 @@ export function parseRun(dir) {
   const runId = (/runId\\*"\s*:\s*\\*"(r\d+)/.exec(relayRaw) || [])[1]
   if (!runId) return null
   if (agents.some((a) => !a.done)) return { runId, incomplete: true }
+  const mode = (/mode\\*"\s*:\s*\\*"([a-z]+)/.exec(relayRaw) || [])[1] || null
+  if (mode === 'review' || mode === 'sweep') return parseReviewRun(dir, runId, mode, agents)
+  if (mode === 'scale') return parseScaleRun(dir, runId, agents)
 
   const units = new Map()
   const unit = (id) => units.get(id) ?? units.set(id, { id, builds: [], verifies: [], escalation: 'none', tokens: { build: 0, verify: 0, escalation: 0 }, models: new Set() }).get(id)
@@ -104,6 +107,8 @@ export function parseRun(dir) {
     const lastV = u.verifies.at(-1)?.result
     return {
       runId,
+      kind: 'unit',
+      role: 'build',
       id: u.id,
       firstPass: !!(b1 && b1.done && v1 && v1.pass === true),
       finalPass: !!(lastV && lastV.pass === true) || (lastV == null && !!lastB?.done),
@@ -116,6 +121,45 @@ export function parseRun(dir) {
     }
   })
   return { runId, dir, outcomes }
+}
+
+// review/sweep: one outcome per routed reviewer — how many findings it raised and how many survived the
+// adversarial verify. Verify labels carry no reviewer id, so each verdict is matched back to a finding by the
+// label's key (review: the finding title's first 28 chars; sweep: the file name of its location).
+function parseReviewRun(dir, runId, mode, agents) {
+  const key = mode === 'review' ? (f) => String(f.title).slice(0, 28) : (f) => String(f.location).split(/[: ]/)[0].split('/').pop()
+  const reviewers = agents.filter((a) => a.label.startsWith('review:'))
+  const verdicts = new Map()
+  for (const a of agents) {
+    if (!a.label.startsWith('verify:') || !a.result) continue
+    const k = a.label.slice('verify:'.length)
+    ;(verdicts.get(k) ?? verdicts.set(k, []).get(k)).push(a.result.isReal === true)
+  }
+  const outcomes = reviewers.map((a) => {
+    const findings = Array.isArray(a.result?.findings) ? a.result.findings : []
+    let verified = 0, confirmed = 0
+    for (const f of findings) {
+      const votes = verdicts.get(key(f))
+      if (!votes?.length) continue
+      verified++
+      if (votes.filter(Boolean).length >= Math.ceil(votes.length / 2)) confirmed++
+    }
+    const st = agentStats(dir, a.agentId)
+    return { runId, kind: 'review', role: 'review', mode, id: a.label.slice('review:'.length), findings: findings.length, verified, confirmed, tokens: { review: st.out }, modelsSeen: st.model ? [st.model] : [] }
+  })
+  return { runId, dir, outcomes }
+}
+
+// scale: one outcome for the routed unit template — how many units came back built, and their mean tokens.
+function parseScaleRun(dir, runId, agents) {
+  const builds = agents.filter((a) => /^build:\d+$/.test(a.label))
+  const tokens = builds.map((a) => agentStats(dir, a.agentId).out)
+  const models = [...new Set(builds.map((a) => agentStats(dir, a.agentId).model).filter(Boolean))]
+  return {
+    runId,
+    dir,
+    outcomes: [{ runId, kind: 'scale', role: 'build', id: 'template', units: builds.length, built: builds.filter((a) => a.result != null).length, tokens: { build: tokens.length ? Math.round(tokens.reduce((x, y) => x + y, 0) / tokens.length) : 0 }, modelsSeen: models }],
+  }
 }
 
 // ---------- Jev post-task evaluation (true = a problem) ----------
@@ -174,13 +218,21 @@ async function ingest({ noEval, root }) {
     if (run.incomplete) continue // still running or partial: retry next time
     const ts = statSync(join(dir, 'journal.jsonl')).mtimeMs
     for (const o of run.outcomes) {
-      const route = routes.find((r) => r.runId === run.runId && r.id === o.id && r.role === 'build')
-      const ev = key ? await jevEval(key, route, o) : null
+      const route = routes.find((r) => r.runId === run.runId && r.id === o.id && r.role === o.role)
+      const ev = key && o.kind === 'unit' ? await jevEval(key, route, o) : null // Jev judges built units only
       const { lastBuild, lastVerify, ...rest } = o
       const row = { ts, ...rest, arm: route?.decision?.model ? `${route.decision.model}/${route.decision.effort}` : null, reason: route?.decision?.reason ?? null, policyVersion: route?.policyVersion ?? 0, eval: ev }
       appendFileSync(F.outcomes, JSON.stringify(row) + '\n')
     }
-    fresh.push({ runId: run.runId, units: run.outcomes.length, firstPass: run.outcomes.filter((o) => o.firstPass).length, escalations: run.outcomes.filter((o) => o.escalation !== 'none').length })
+    const kind = run.outcomes[0]?.kind ?? 'unit'
+    fresh.push({
+      runId: run.runId,
+      kind,
+      units: run.outcomes.length,
+      ...(kind === 'unit' ? { firstPass: run.outcomes.filter((o) => o.firstPass).length, escalations: run.outcomes.filter((o) => o.escalation !== 'none').length } : {}),
+      ...(kind === 'review' ? { findings: run.outcomes.reduce((s, o) => s + o.findings, 0), confirmed: run.outcomes.reduce((s, o) => s + o.confirmed, 0) } : {}),
+      ...(kind === 'scale' ? { built: run.outcomes[0].built, of: run.outcomes[0].units } : {}),
+    })
     done.add(dir)
   }
   writeFileSync(F.ingested, JSON.stringify([...done].slice(-5000)))
@@ -190,7 +242,8 @@ async function ingest({ noEval, root }) {
 export function analyze(routes, outcomes, ratings) {
   const byKey = new Map(routes.filter((r) => r.role === 'build').map((r) => [`${r.runId}:${r.id}`, r]))
   const bad = new Set(ratings.filter((r) => r.rating === 'bad').map((r) => r.runId))
-  const rows = outcomes.map((o) => ({ o, r: byKey.get(`${o.runId}:${o.id}`), humanBad: bad.has(o.runId) })).filter((x) => x.r)
+  // policy tuning reads built units only (kind 'unit'; rows from before kinds existed count as units)
+  const rows = outcomes.filter((o) => (o.kind ?? 'unit') === 'unit').map((o) => ({ o, r: byKey.get(`${o.runId}:${o.id}`), humanBad: bad.has(o.runId) })).filter((x) => x.r)
   const ok = (x) => x.o.firstPass && !x.humanBad
   const bucket = (xs) => ({ n: xs.length, firstPass: xs.length ? round(xs.filter(ok).length / xs.length) : null, meanBuildTokens: xs.length ? Math.round(xs.reduce((s, x) => s + (x.o.tokens?.build ?? 0), 0) / xs.length) : null, escalated: xs.filter((x) => x.o.escalation !== 'none').length })
   const arms = {}
@@ -207,7 +260,25 @@ export function analyze(routes, outcomes, ratings) {
     keptPlanner: bucket(reason(/keep-planner/)),
     midConfidence: bucket(midConf),
     jevEval: { n: evaluated.length, agreementWithVerify: evaluated.length ? round(agree / evaluated.length) : null },
+    reviewArms: armStats(outcomes.filter((o) => o.kind === 'review'), (xs) => ({
+      n: xs.length,
+      meanFindings: round(xs.reduce((s, o) => s + o.findings, 0) / xs.length, 1),
+      confirmRate: xs.some((o) => o.verified) ? round(xs.reduce((s, o) => s + o.confirmed, 0) / Math.max(1, xs.reduce((s, o) => s + o.verified, 0))) : null,
+      meanTokens: Math.round(xs.reduce((s, o) => s + (o.tokens?.review ?? 0), 0) / xs.length),
+    })),
+    scaleArms: armStats(outcomes.filter((o) => o.kind === 'scale'), (xs) => ({
+      runs: xs.length,
+      builtRate: round(xs.reduce((s, o) => s + o.built, 0) / Math.max(1, xs.reduce((s, o) => s + o.units, 0))),
+      meanUnitTokens: Math.round(xs.reduce((s, o) => s + (o.tokens?.build ?? 0), 0) / xs.length),
+    })),
   }
+}
+
+// report-only stats per routed arm (review/scale rows do not move the policy)
+function armStats(rows, summarize) {
+  const by = {}
+  for (const o of rows) (by[o.arm ?? 'static'] ??= []).push(o)
+  return Object.fromEntries(Object.entries(by).map(([k, xs]) => [k, summarize(xs)]))
 }
 
 // Bounded, sample-gated moves; one STEP per tune at most. Returns the new policy (unchanged when no evidence).

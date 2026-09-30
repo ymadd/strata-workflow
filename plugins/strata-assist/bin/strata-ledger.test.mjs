@@ -55,4 +55,47 @@ assert.equal(propose({ ...DEFAULT_POLICY, DOWNGRADE_MIN_CONFIDENCE: 0.95 }, rep)
 assert.equal(propose(DEFAULT_POLICY, analyze(routes.slice(0, 5), outcomes.slice(0, 5), [])).moves.length, 0)
 // a human "bad" rating turns first-pass successes into failures for tuning
 assert.equal(analyze(routes, outcomes, [{ runId: 'r1', rating: 'bad' }]).downgrades.firstPass, 0)
+
+// --- review mode: reviewers are review:<dim>, verdicts verify:<title[0:28]>; majority isReal confirms
+const fixture = (agents) => {
+  const d = mkdtempSync(join(tmpdir(), 'wf_'))
+  const j = []
+  for (const [id, label, result, prompt, model, out] of agents) {
+    j.push({ type: 'started', key: `k${id}`, agentId: id, label }, { type: 'result', key: `k${id}`, agentId: id, result })
+    writeFileSync(join(d, `agent-${id}.jsonl`), [
+      { type: 'user', message: { role: 'user', content: prompt } },
+      { type: 'assistant', message: { role: 'assistant', model, usage: { output_tokens: out } } },
+    ].map((r) => JSON.stringify(r)).join('\n'))
+  }
+  writeFileSync(join(d, 'journal.jsonl'), j.map((r) => JSON.stringify(r)).join('\n'))
+  return d
+}
+const longTitle = 'Unchecked null deref in parseConfig when file missing'
+const rv = parseRun(fixture([
+  ['r0', 'route:jev', { routes: [] }, 'Input:\n{"mode":"review","runId":"r900","units":[]}', 'claude-haiku-4-5', 40],
+  ['r1', 'review:correctness', { findings: [{ title: longTitle, location: 'src/a.ts:10' }, { title: 'Off by one in pager', location: 'src/p.ts:3' }] }, 'x', 'claude-sonnet-5-5', 800],
+  ['r2', 'review:security', { findings: [] }, 'x', 'claude-opus-5-5', 300],
+  ['v1', `verify:${longTitle.slice(0, 28)}`, { isReal: true }, 'x', 'claude-sonnet-5-5', 100],
+  ['v2', `verify:${longTitle.slice(0, 28)}`, { isReal: true }, 'x', 'claude-sonnet-5-5', 100],
+  ['v3', 'verify:Off by one in pager', { isReal: false }, 'x', 'claude-sonnet-5-5', 100],
+]))
+const corr = rv.outcomes.find((o) => o.id === 'correctness'), sec = rv.outcomes.find((o) => o.id === 'security')
+assert.deepEqual([corr.kind, corr.findings, corr.verified, corr.confirmed, corr.tokens.review], ['review', 2, 2, 1, 800])
+assert.deepEqual([sec.findings, sec.confirmed], [0, 0])
+assert.ok(!rv.outcomes.some((o) => o.id.startsWith('Unchecked')), 'verify labels must not become units')
+
+// --- scale mode: one template outcome; build:<index> labels are not conduct units
+const sc = parseRun(fixture([
+  ['s0', 'route:jev', { routes: [] }, 'Input:\n{"mode":"scale","runId":"r901","units":[]}', 'claude-haiku-4-5', 40],
+  ['s1', 'build:0', { ok: 1 }, 'x', 'claude-haiku-4-5', 100],
+  ['s2', 'build:1', null, 'x', 'claude-haiku-4-5', 300],
+]))
+assert.equal(sc.outcomes.length, 1)
+assert.deepEqual([sc.outcomes[0].kind, sc.outcomes[0].id, sc.outcomes[0].units, sc.outcomes[0].built, sc.outcomes[0].tokens.build], ['scale', 'template', 2, 1, 200])
+
+// review/scale rows never feed policy tuning, but show up as report-only arm stats
+const mixed = analyze([], [{ ...corr, arm: 'sonnet/low' }, { ...sc.outcomes[0], arm: 'haiku/low' }], [])
+assert.equal(mixed.samples, 0)
+assert.deepEqual(mixed.reviewArms['sonnet/low'], { n: 1, meanFindings: 2, confirmRate: 0.5, meanTokens: 800 })
+assert.deepEqual(mixed.scaleArms['haiku/low'], { runs: 1, builtRate: 0.5, meanUnitTokens: 200 })
 console.log('all ledger tests pass')
