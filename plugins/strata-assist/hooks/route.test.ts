@@ -26,3 +26,8 @@ assert.match(decide(b('sonnet'), J('opus/high', 0.95, 3)).reason, /upgrade:sonne
 // jev failure → no model (script falls back to static)
 assert.equal(decide(b('sonnet'), null).model, undefined)
 console.log('all route policy tests pass')
+// tuned policy is honoured: stricter downgrade threshold keeps the planner tier at confidence 0.82
+const strict = { version: 1, LOW_CONFIDENCE: 0.4, DOWNGRADE_MIN_CONFIDENCE: 0.85, DOWNGRADE_MAX_BLAST: 2 }
+assert.equal(decide(b('opus'), J('sonnet/low', 0.82, 1), strict).model, 'opus')
+assert.equal(decide(b('opus'), J('sonnet/low', 0.82, 1)).model, 'sonnet')
+console.log('policy param tests pass')

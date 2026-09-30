@@ -55,7 +55,10 @@ const modelOf = (arm: Arm) => arm.split('/')[0]
 const effortOf = (arm: Arm) => arm.split('/')[1]
 const RANK: Record<string, number> = { haiku: 0, sonnet: 1, opus: 2 }
 
-export function decide(u: RouteUnit, j: JevAnswers | null): RouteDecision {
+export type Policy = { version: number; LOW_CONFIDENCE: number; DOWNGRADE_MIN_CONFIDENCE: number; DOWNGRADE_MAX_BLAST: number }
+export const DEFAULT_POLICY: Policy = { version: 0, LOW_CONFIDENCE, DOWNGRADE_MIN_CONFIDENCE, DOWNGRADE_MAX_BLAST }
+
+export function decide(u: RouteUnit, j: JevAnswers | null, policy: Policy = DEFAULT_POLICY): RouteDecision {
   const band = BAND[u.role]
   if (!band) return { id: u.id, role: u.role, reason: 'no-band' }
   if (!j) return { id: u.id, role: u.role, reason: 'jev-unavailable' }
@@ -70,7 +73,7 @@ export function decide(u: RouteUnit, j: JevAnswers | null): RouteDecision {
     arm = j.choice as Arm
     reasons.push('jev')
     // 2. low confidence → one step up inside the band (only when Jev's own pick stands)
-    if (j.confidence < LOW_CONFIDENCE) {
+    if (j.confidence < policy.LOW_CONFIDENCE) {
       arm = band[Math.min(band.length - 1, band.indexOf(arm) + 1)]
       reasons.push('low-conf-step-up')
     }
@@ -83,8 +86,8 @@ export function decide(u: RouteUnit, j: JevAnswers | null): RouteDecision {
   if (u.role === 'build' && u.plannerTier) {
     const p = RANK[u.plannerTier], m = RANK[modelOf(arm)]
     if (m < p) {
-      const blastOk = j.blast !== null && j.blast < DOWNGRADE_MAX_BLAST
-      if (j.confidence >= DOWNGRADE_MIN_CONFIDENCE && blastOk) reasons.push(`downgrade:${u.plannerTier}→${modelOf(arm)}`)
+      const blastOk = j.blast !== null && j.blast < policy.DOWNGRADE_MAX_BLAST
+      if (j.confidence >= policy.DOWNGRADE_MIN_CONFIDENCE && blastOk) reasons.push(`downgrade:${u.plannerTier}→${modelOf(arm)}`)
       else {
         // keep the planner's model; effort from Jev when compatible, else the planner model's base effort
         const keep = u.plannerTier === 'opus' ? 'opus/medium' : effortOf(arm) === 'medium' ? 'sonnet/medium' : 'sonnet/low'

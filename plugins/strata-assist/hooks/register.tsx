@@ -3,7 +3,7 @@ import type { Engine, Register } from 'claude-code'
 
 import { parse, candidates, agentEstimate, fmtTokens, MODES } from './strata'
 import { buildRequest, readResponse, JEV_URL, JEV_MODEL, type Route } from './jev'
-import { buildQuestions, buildState, readAnswers, decide, type RouteUnit } from './route'
+import { buildQuestions, buildState, readAnswers, decide, DEFAULT_POLICY, type Policy, type RouteUnit } from './route'
 
 // Strata input assist: while a /strata-workflow command is being typed, a band above the
 // prompt shows how the router will read it, what can come next, and (when no mode is named)
@@ -55,6 +55,40 @@ async function appendLedger($: Engine, rows: unknown[]) {
   } catch {}
 }
 
+// Tuned routing policy written by `strata-ledger tune`; defaults when absent or malformed.
+async function loadPolicy($: Engine): Promise<Policy> {
+  const home = await $.env.get('HOME')
+  try {
+    const t = (await $.fs.read(`${home}/.claude/strata/policy.json`)) as unknown
+    const p = JSON.parse(typeof t === 'string' ? t : String((t as any)?.text ?? ''))
+    const ok = (k: keyof Policy) => typeof p[k] === 'number'
+    return ok('LOW_CONFIDENCE') && ok('DOWNGRADE_MIN_CONFIDENCE') && ok('DOWNGRADE_MAX_BLAST') ? { ...DEFAULT_POLICY, ...p } : DEFAULT_POLICY
+  } catch {
+    return DEFAULT_POLICY
+  }
+}
+
+// Runs bin/strata-ledger.mjs (plain Node: reads transcripts, calls Jev, writes the ledger).
+async function ledger($: Engine, argv: string[]): Promise<any> {
+  try {
+    const r = await $.process.run(['node', `${$.plugin.root}/bin/strata-ledger.mjs`, ...argv], { timeoutMs: 120_000 })
+    const line = r.stdout.trim().split('\n').pop() || '{}'
+    return r.exitCode === 0 ? JSON.parse(line) : { error: (r.stderr || line).slice(0, 300) }
+  } catch (err) {
+    return { error: String(err).slice(0, 300) }
+  }
+}
+
+// After a turn: ingest finished routed runs; tell the person what came in and how to rate it.
+async function autoIngest($: Engine) {
+  if ((await $.store.get('jev')) === false) return
+  const out = await ledger($, ['ingest'])
+  const runs = Array.isArray(out?.ingested) ? out.ingested : []
+  for (const r of runs) {
+    $.ui.toast(`Strata ${r.runId}: first-pass ${r.firstPass}/${r.units}, escalations ${r.escalations} — /strata-assist rate good|bad`)
+  }
+}
+
 // The route tool: Jev per unit (parallel) → policy → ledger → compact routes for the relay agent.
 async function serveRoute($: Engine, input: any): Promise<string> {
   const units: RouteUnit[] = Array.isArray(input?.units) ? input.units.slice(0, 40) : []
@@ -64,11 +98,17 @@ async function serveRoute($: Engine, input: any): Promise<string> {
     units.map(u => (key ? jevPost($, key, { model: JEV_MODEL, state: buildState(u, mode), questions: buildQuestions() }) : Promise.resolve(null))),
   )
   const ts = await $.clock.now()
+  const policy = await loadPolicy($)
   const rows: unknown[] = []
+  const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : null)
   const routes = units.map((u, i) => {
     const j = readAnswers(answers[i])
-    const d = decide(u, j)
-    rows.push({ ts, runId: input?.runId ?? null, mode, id: u.id, role: u.role, plannerTier: u.plannerTier ?? null, jevModel: JEV_MODEL, jev: j, decision: d })
+    const d = decide(u, j, policy)
+    rows.push({
+      ts, runId: input?.runId ?? null, mode, id: u.id, role: u.role, plannerTier: u.plannerTier ?? null,
+      title: clip(u.title, 200), spec: clip(u.spec, 4000), acceptance: clip(u.acceptance, 2000),
+      jevModel: JEV_MODEL, policyVersion: policy.version, jev: j, decision: d,
+    })
     return d
   })
   await appendLedger($, rows)
@@ -121,6 +161,7 @@ async function askJev($: Engine, task: string, domain: string | undefined, mine:
 export const register: Register = on => {
   const ctx: Ctx = { seq: 0, cache: new Map() }
   let timer: { cancel: () => void } | undefined
+  let ingesting = false
 
   on('session.start', async ($, e, next) => {
     await $.tool.register({
@@ -147,19 +188,24 @@ export const register: Register = on => {
         required: ['mode', 'units'],
       },
     })
-    await $.command.register({ name: 'strata-assist', description: 'Strata input assist: `jev on` / `jev off` toggles the Jev auto-route preview' })
+    await $.command.register({ name: 'strata-assist', description: 'Strata assist: jev on|off · ingest · stats · tune [--dry] · rate good|bad [runId] [note]' })
     return next(e)
   })
 
   on('command.run', { command: 'strata-assist' }, async ($, e) => {
     const arg = e.args.trim()
+    const [sub, ...rest] = arg.split(/\s+/)
+    if (sub === 'ingest' || sub === 'tune' || sub === 'stats' || sub === 'rate') {
+      const out = await ledger($, [sub, ...rest])
+      return { text: `Strata ledger ${sub}:\n${JSON.stringify(out, null, 2)}` }
+    }
     if (arg === 'jev off' || arg === 'jev on') {
       await $.store.set('jev', arg === 'jev on')
       return { text: `Strata assist: Jev auto-route preview ${arg === 'jev on' ? 'on' : 'off'}.` }
     }
     const key = await apiKey($)
     const on_ = (await $.store.get('jev')) !== false
-    return { text: `Strata assist — Jev preview: ${on_ ? 'on' : 'off'}, API key: ${key ? 'found' : 'missing (TYPESAFE_API_KEY or ~/.config/typesafe/api_key)'}. Usage: /strata-assist jev on|off` }
+    return { text: `Strata assist — Jev preview: ${on_ ? 'on' : 'off'}, API key: ${key ? 'found' : 'missing (TYPESAFE_API_KEY or ~/.config/typesafe/api_key)'}. Usage: /strata-assist jev on|off · ingest · stats · tune [--dry] · rate good|bad [runId] [note]` }
   })
 
   on('tool.call', { tool: ROUTE_TOOL }, async ($, e) => ({ result: await serveRoute($, e) }))
@@ -190,6 +236,19 @@ export const register: Register = on => {
     timer?.cancel()
     if (p && p.inTask && !p.mode && p.task.length >= MIN_TASK) {
       timer = $.clock.after(DEBOUNCE_MS, () => void askJev($, p.task, p.domain, mine, ctx))
+    }
+    return res
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    const res = await next(e)
+    if (!ingesting) {
+      ingesting = true
+      $.clock.after(0, () =>
+        void autoIngest($).finally(() => {
+          ingesting = false
+        }),
+      )
     }
     return res
   })
