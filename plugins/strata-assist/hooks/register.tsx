@@ -2,7 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { Engine, Register } from 'claude-code'
 
 import { parse, candidates, agentEstimate, fmtTokens, MODES } from './strata'
-import { buildRequest, readResponse, JEV_URL, type Route } from './jev'
+import { buildRequest, readResponse, JEV_URL, JEV_MODEL, type Route } from './jev'
+import { buildQuestions, buildState, readAnswers, decide, type RouteUnit } from './route'
 
 // Strata input assist: while a /strata-workflow command is being typed, a band above the
 // prompt shows how the router will read it, what can come next, and (when no mode is named)
@@ -16,6 +17,63 @@ const MIN_TASK = 8 // chars before asking Jev
 const TIMEOUT_MS = 3000
 
 type Ctx = { seq: number; cache: Map<string, Route> }
+
+const ROUTE_TOOL = 'mcp__strata-assist__route'
+const ROUTED_WORKFLOWS = /strata-(conduct|delegate)(\.js)?$/
+
+// One Jev System One call with a hard deadline; null on any failure (callers fall back, never block).
+async function jevPost($: Engine, key: string, body: unknown): Promise<any | null> {
+  try {
+    const res = await Promise.race([
+      $.http.fetch(JEV_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+      $.clock.sleep(TIMEOUT_MS).then(() => null),
+    ])
+    return res && res.ok ? JSON.parse(res.text) : null
+  } catch {
+    return null
+  }
+}
+
+// Append-only routing ledger (JSONL) — the raw material for evaluation and tuning (step ④).
+async function appendLedger($: Engine, rows: unknown[]) {
+  const home = await $.env.get('HOME')
+  if (!home || !rows.length) return
+  const dir = `${home}/.claude/strata`
+  const path = `${dir}/routes.jsonl`
+  try {
+    await $.process.run(['mkdir', '-p', dir])
+    let prev = ''
+    try {
+      const t = (await $.fs.read(path)) as unknown
+      prev = typeof t === 'string' ? t : String((t as any)?.text ?? '')
+    } catch {}
+    await $.fs.write(path, prev + rows.map(r => JSON.stringify(r)).join('\n') + '\n')
+  } catch {}
+}
+
+// The route tool: Jev per unit (parallel) → policy → ledger → compact routes for the relay agent.
+async function serveRoute($: Engine, input: any): Promise<string> {
+  const units: RouteUnit[] = Array.isArray(input?.units) ? input.units.slice(0, 40) : []
+  const mode = String(input?.mode ?? '')
+  const key = (await $.store.get('jev')) === false ? undefined : await apiKey($)
+  const answers = await Promise.all(
+    units.map(u => (key ? jevPost($, key, { model: JEV_MODEL, state: buildState(u, mode), questions: buildQuestions() }) : Promise.resolve(null))),
+  )
+  const ts = await $.clock.now()
+  const rows: unknown[] = []
+  const routes = units.map((u, i) => {
+    const j = readAnswers(answers[i])
+    const d = decide(u, j)
+    rows.push({ ts, runId: input?.runId ?? null, mode, id: u.id, role: u.role, plannerTier: u.plannerTier ?? null, jevModel: JEV_MODEL, jev: j, decision: d })
+    return d
+  })
+  await appendLedger($, rows)
+  return JSON.stringify({ routes })
+}
 
 // TYPESAFE_API_KEY from the environment, else ~/.config/typesafe/api_key (keeps the key out of settings/transcripts)
 async function apiKey($: Engine): Promise<string | undefined> {
@@ -65,6 +123,30 @@ export const register: Register = on => {
   let timer: { cancel: () => void } | undefined
 
   on('session.start', async ($, e, next) => {
+    await $.tool.register({
+      name: 'route',
+      description: 'Strata: route work units to a (model, effort) with Jev. Call only when a Strata workflow instructs you to, passing its payload verbatim.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string' },
+          runId: { type: 'string' },
+          units: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' }, role: { type: 'string', enum: ['scout', 'build', 'verify'] }, title: { type: 'string' },
+                spec: { type: 'string' }, acceptance: { type: 'string' }, own: { type: 'array', items: { type: 'string' } },
+                plannerTier: { type: 'string', enum: ['sonnet', 'opus'] },
+              },
+              required: ['id', 'role', 'spec'],
+            },
+          },
+        },
+        required: ['mode', 'units'],
+      },
+    })
     await $.command.register({ name: 'strata-assist', description: 'Strata input assist: `jev on` / `jev off` toggles the Jev auto-route preview' })
     return next(e)
   })
@@ -78,6 +160,25 @@ export const register: Register = on => {
     const key = await apiKey($)
     const on_ = (await $.store.get('jev')) !== false
     return { text: `Strata assist — Jev preview: ${on_ ? 'on' : 'off'}, API key: ${key ? 'found' : 'missing (TYPESAFE_API_KEY or ~/.config/typesafe/api_key)'}. Usage: /strata-assist jev on|off` }
+  })
+
+  on('tool.call', { tool: ROUTE_TOOL }, async ($, e) => ({ result: await serveRoute($, e) }))
+
+  // Before a routed Strata workflow starts: flag Jev routing in its args (scripts can't reach the network).
+  on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
+    const w = e as any
+    const target = String(w.scriptPath ?? w.name ?? '')
+    if (!ROUTED_WORKFLOWS.test(target)) return next(e)
+    const asString = typeof w.args === 'string'
+    let args: any = w.args
+    if (asString) {
+      try { args = JSON.parse(w.args) } catch { return next(e) }
+    }
+    if (!args || typeof args !== 'object' || args.dataSensitive === true || args.jev) return next(e)
+    if ((await $.store.get('jev')) === false || !(await apiKey($))) return next(e)
+    const runId = `r${await $.clock.now()}`
+    const withJev = { ...args, jev: { route: true, tool: ROUTE_TOOL, runId } }
+    return next({ ...w, args: asString ? JSON.stringify(withJev) : withJev })
   })
 
   on('prompt.edit', async ($, e, next) => {

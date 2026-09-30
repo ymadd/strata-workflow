@@ -222,17 +222,77 @@ if (!units && Array.isArray(A.units) && A.units.length) {
 }
 if (!units) units = [{ id: 'U1', title: A.task.slice(0, 80), tier: EXEC_MODEL === 'sonnet' ? 'sonnet' : 'opus', refs: [], spec: A.task, acceptance: DOD }]
 
+// ---- Jev routing (optional): per-unit (model, effort) proposals from the strata-assist mod ----
+// Same channel as conduct: the mod flags args.jev, ONE haiku relay calls its route tool. Jev only
+// PROPOSES — this block re-enforces the role bands (never the apex, verify never below sonnet).
+// delegate has no OPUS_UNIT_CAP (≤6 sequential units, opus is its documented default builder).
+// No flag, dataSensitive, or any failure → the static tiers above, unchanged.
+const JEV = A.jev && A.jev.route === true && typeof A.jev.tool === 'string' && A.dataSensitive !== true ? A.jev : null
+const ROUTE_RELAY_MODEL = 'haiku' // a copy-through relay: no judgment of its own
+const ROUTE_BAND = {
+  build: { haiku: ['low'], sonnet: ['low', 'medium'], opus: ['medium', 'high'] },
+  verify: { sonnet: ['low', 'medium'], opus: ['medium'] },
+}
+const routeOk = (role, r) => !!(r && ROUTE_BAND[role] && ROUTE_BAND[role][r.model] && ROUTE_BAND[role][r.model].includes(r.effort))
+const ROUTE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    routes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, role: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' }, reason: { type: 'string' } },
+        required: ['id', 'role', 'reason'],
+      },
+    },
+  },
+  required: ['routes'],
+}
+const routing = { used: false, runId: JEV ? JEV.runId || null : null, units: [] }
+if (JEV && canSpawn()) {
+  spawned++
+  const plannerTierOf = (u) => (u.tier === 'sonnet' ? 'sonnet' : EXEC_MODEL)
+  const payload = {
+    mode: 'delegate',
+    runId: JEV.runId,
+    units: units.flatMap((u) => [
+      { id: u.id, role: 'build', title: u.title, spec: u.spec, acceptance: u.acceptance, plannerTier: plannerTierOf(u) },
+      { id: u.id, role: 'verify', title: u.title, spec: `Adversarially verify this unit: ${u.spec}`, acceptance: u.acceptance },
+    ]),
+  }
+  const relay = await agent(
+    `Load the tool ${JEV.tool} with ToolSearch (query "select:${JEV.tool}"), call it ONCE with exactly the input below, and return its "routes" array unchanged. Do nothing else.\n\nInput:\n${JSON.stringify(payload)}`,
+    { label: 'route:jev', phase: 'Execute', model: ROUTE_RELAY_MODEL, effort: 'low', schema: ROUTE_SCHEMA }
+  )
+  const byKey = new Map((relay && Array.isArray(relay.routes) ? relay.routes : []).map((r) => [`${r.role}:${r.id}`, r]))
+  for (const u of units) {
+    const b = byKey.get(`build:${u.id}`)
+    if (routeOk('build', b)) u.exec = { model: b.model, effort: b.effort, reason: b.reason }
+    const v = byKey.get(`verify:${u.id}`)
+    if (routeOk('verify', v)) u.check = { model: v.model, effort: v.effort, reason: v.reason }
+  }
+  routing.used = byKey.size > 0
+  routing.units = units.map((u) => ({ id: u.id, plannerTier: plannerTierOf(u), exec: u.exec || null, verify: u.check || null }))
+  log(
+    routing.used
+      ? `route: Jev routed ${units.filter((u) => u.exec).length}/${units.length} builds — ` +
+          units.map((u) => `${u.id}=${u.exec ? `${u.exec.model}/${u.exec.effort}` : plannerTierOf(u)}`).join(' ')
+      : 'route: Jev relay returned nothing — static tiers'
+  )
+}
+
 // ---- Phase 2: EXECUTE — sequential (units may share files; parallel builds would conflict) ----
 phase('Execute')
 const SILENT_RULES =
   'Discipline: run the relevant tests/lint yourself before reporting. Your ONLY output is the schema-bounded JSON. Do NOT restate diffs or narrate steps ("now I will...") — changes live in the files and are reviewed via git diff.'
 
-const buildOnce = async (u, model, extra, label) => {
+const buildOnce = async (u, model, extra, label, effort) => {
   if (!canSpawn()) return null
   spawned++
   return agent(
     `You are the EXECUTOR for one unit of a larger task. Implement it directly in the real files.\n\nUnit: ${u.title}\nSpec: ${u.spec}\nRead first (smallest sufficient set): ${u.refs && u.refs.length ? u.refs.join(', ') : '(discover the minimal set yourself)'}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\n${extra ? `\n${extra}\n` : ''}\n${SILENT_RULES}`,
-    { label, phase: 'Execute', model, schema: BUILD_SCHEMA }
+    { label, phase: 'Execute', model, schema: BUILD_SCHEMA, ...(effort ? { effort } : {}) }
   )
 }
 const verifyOnce = async (u, build, label) => {
@@ -240,7 +300,7 @@ const verifyOnce = async (u, build, label) => {
   spawned++
   return agent(
     `Adversarially verify this unit against its acceptance criteria and DoD. Re-read the changed files; run the relevant tests yourself if runnable. Be skeptical — default to pass=false unless the evidence clearly supports it.\n\nUnit: ${u.title}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nBuilder report: ${JSON.stringify(build)}`,
-    { label, phase: 'Execute', model: VERIFY_MODEL, schema: VERIFY_SCHEMA }
+    { label, phase: 'Execute', model: u.check ? u.check.model : VERIFY_MODEL, schema: VERIFY_SCHEMA, ...(u.check ? { effort: u.check.effort } : {}) }
   )
 }
 
@@ -255,7 +315,8 @@ for (const u of units) {
     continue
   }
 
-  const unitModel = u.tier === 'sonnet' ? 'sonnet' : EXEC_MODEL
+  const unitModel = u.exec ? u.exec.model : u.tier === 'sonnet' ? 'sonnet' : EXEC_MODEL
+  const unitEffort = u.exec ? u.exec.effort : undefined
   let escalation = 'none'
   let lastBuild = null
   let lastVerify = null
@@ -267,7 +328,7 @@ for (const u of units) {
       attempt > 1 && lastVerify
         ? `Previous attempt failed verification: ${JSON.stringify(lastVerify.failures || lastVerify.reason)}. Fix the cause, not the symptom.`
         : ''
-    lastBuild = await buildOnce(u, unitModel, feedback, `build:${u.id}#${attempt}`)
+    lastBuild = await buildOnce(u, unitModel, feedback, `build:${u.id}#${attempt}`, unitEffort)
     if (!lastBuild) break // budget gate or agent death — settle below
     lastVerify = await verifyOnce(u, lastBuild, `verify:${u.id}#${attempt}`)
     if (lastVerify === null) {
@@ -298,7 +359,7 @@ for (const u of units) {
     )
     if (advice) {
       const guided = `Escalation diagnosis from the advisor — follow this plan:\nRoot cause: ${advice.rootCause}\nPlan: ${(advice.plan || []).join(' / ')}\nDo NOT repeat: ${(advice.mustNotRepeat || []).join(' / ')}`
-      lastBuild = await buildOnce(u, unitModel, guided, `build:${u.id}#advised`)
+      lastBuild = await buildOnce(u, unitModel, guided, `build:${u.id}#advised`, unitEffort)
       if (lastBuild) {
         lastVerify = await verifyOnce(u, lastBuild, `verify:${u.id}#advised`)
         if (lastVerify === null) {
@@ -359,6 +420,7 @@ return {
   maxAgents: MAX_AGENTS,
   dod: DOD,
   apex: { model: APEX_MODEL, advises: apexAdvises, rebuilds: apexBuilds, dataSensitive: A.dataSensitive === true },
+  routing,
   unitsDone: done,
   unitsFailed: failedUnits.map((r) => ({ id: r.id, title: r.title, verify: r.verify })),
   unitsSkipped: skipped.map((r) => r.id),

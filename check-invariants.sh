@@ -496,6 +496,23 @@ for other in "${WF}"/strata-*.js; do
 done
 [[ "$fable_leak" -eq 0 ]] && PASS "fable containment: no other mode references the apex tier"
 
+# Jev routing (conduct/delegate): Jev only PROPOSES (model, effort); the script re-enforces bands.
+# (a) gated off by dataSensitive  (b) proposals pass routeOk before use  (c) verify band never haiku
+# (d) no apex tier in the route band  (e) conduct: routed upgrades are bounded by OPUS_UNIT_CAP
+for f in strata-conduct.js strata-delegate.js; do
+  F="${WF}/${f}"
+  m="${f%.js}"; m="${m#strata-}"
+  grep_require "$F" "A\.dataSensitive !== true \? A\.jev : null" "${m}: Jev routing disabled under dataSensitive"
+  grep_require "$F" "routeOk\('build', b\)"                     "${m}: routed build proposals pass routeOk before use"
+  grep_require "$F" "verify: \{ sonnet: \['low', 'medium'\], opus: \['medium'\] \}" "${m}: verify route band is sonnet|opus only (never haiku)"
+  if sed -n '/const ROUTE_BAND = {/,/^}/p' "$F" | grep -q "fable"; then
+    FAIL "${m}: ROUTE_BAND names the apex tier"
+  else
+    PASS "${m}: ROUTE_BAND never names the apex tier"
+  fi
+done
+grep_require "${WF}/strata-conduct.js" "opusUnits >= OPUS_UNIT_CAP" "conduct: routed opus upgrades bounded by OPUS_UNIT_CAP"
+
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════════

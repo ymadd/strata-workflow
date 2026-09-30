@@ -311,6 +311,81 @@ if (!units && Array.isArray(A.units) && A.units.length) {
 }
 if (!units) units = [{ id: 'U1', title: A.task.slice(0, 80), tier: 'sonnet', own: [], refs: [], spec: A.task, acceptance: DOD }]
 
+// ---- Jev routing (optional): per-unit (model, effort) proposals from the strata-assist mod ----
+// Scripts can't reach the network, so the mod flags args.jev before the run and serves a route tool;
+// ONE haiku relay calls it for every unit. Jev only PROPOSES — this block re-enforces the role bands
+// (never fable, verify never below sonnet), applies OPUS_UNIT_CAP to upgrades, and honours
+// tierHint:'hard'. No flag, dataSensitive, or any failure → the static tiers above, unchanged.
+const JEV = A.jev && A.jev.route === true && typeof A.jev.tool === 'string' && A.dataSensitive !== true ? A.jev : null
+const ROUTE_RELAY_MODEL = 'haiku' // a copy-through relay: no judgment of its own
+const ROUTE_BAND = {
+  build: { haiku: ['low'], sonnet: ['low', 'medium'], opus: ['medium', 'high'] },
+  verify: { sonnet: ['low', 'medium'], opus: ['medium'] },
+}
+const routeOk = (role, r) => !!(r && ROUTE_BAND[role] && ROUTE_BAND[role][r.model] && ROUTE_BAND[role][r.model].includes(r.effort))
+const ROUTE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    routes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, role: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' }, reason: { type: 'string' } },
+        required: ['id', 'role', 'reason'],
+      },
+    },
+  },
+  required: ['routes'],
+}
+const routing = { used: false, runId: JEV ? JEV.runId || null : null, units: [] }
+if (JEV && canSpawn()) {
+  spawned++
+  const payload = {
+    mode: 'conduct',
+    runId: JEV.runId,
+    units: units.flatMap((u) => [
+      { id: u.id, role: 'build', title: u.title, spec: u.spec, acceptance: u.acceptance, own: u.own, plannerTier: u.tier },
+      { id: u.id, role: 'verify', title: u.title, spec: `Adversarially verify this unit: ${u.spec}`, acceptance: u.acceptance, own: u.own },
+    ]),
+  }
+  const relay = await agent(
+    `Load the tool ${JEV.tool} with ToolSearch (query "select:${JEV.tool}"), call it ONCE with exactly the input below, and return its "routes" array unchanged. Do nothing else.\n\nInput:\n${JSON.stringify(payload)}`,
+    { label: 'route:jev', phase: 'Plan', model: ROUTE_RELAY_MODEL, effort: 'low', schema: ROUTE_SCHEMA }
+  )
+  const byKey = new Map((relay && Array.isArray(relay.routes) ? relay.routes : []).map((r) => [`${r.role}:${r.id}`, r]))
+  let opusUnits = units.filter((u) => u.tier === 'opus').length
+  // downgrades first (they free OPUS_UNIT_CAP slots), then upgrades against the cap
+  const order = [...units].sort((a, b) => (a.tier === 'opus' ? 0 : 1) - (b.tier === 'opus' ? 0 : 1))
+  for (const u of order) {
+    const b = byKey.get(`build:${u.id}`)
+    if (!routeOk('build', b)) continue
+    if (b.model === 'opus' && u.tier !== 'opus') {
+      if (opusUnits >= OPUS_UNIT_CAP) {
+        log(`route: "${u.id}" upgrade to opus refused — OPUS_UNIT_CAP=${OPUS_UNIT_CAP} reached (stays ${u.tier})`)
+        continue
+      }
+      opusUnits++
+    } else if (b.model !== 'opus' && u.tier === 'opus') {
+      opusUnits--
+    }
+    u.exec = { model: b.model, effort: b.effort, reason: b.reason }
+  }
+  for (const u of units) {
+    const v = byKey.get(`verify:${u.id}`)
+    if (!routeOk('verify', v)) continue
+    u.check = VERIFY_MODEL === 'opus' && v.model !== 'opus' ? { model: 'opus', effort: 'medium', reason: `${v.reason},hard-floor` } : { model: v.model, effort: v.effort, reason: v.reason }
+  }
+  routing.used = byKey.size > 0
+  routing.units = units.map((u) => ({ id: u.id, plannerTier: u.tier, exec: u.exec || null, verify: u.check || null }))
+  log(
+    routing.used
+      ? `route: Jev routed ${units.filter((u) => u.exec).length}/${units.length} builds, ${units.filter((u) => u.check).length} verifies — ` +
+          units.map((u) => `${u.id}=${u.exec ? `${u.exec.model}/${u.exec.effort}` : u.tier}`).join(' ')
+      : 'route: Jev relay returned nothing — static tiers'
+  )
+}
+
 // ---- Phase 3: EXECUTE — file-disjoint groups in parallel, sequential ladder inside a group ----
 phase('Execute')
 
@@ -341,12 +416,12 @@ const SILENT_RULES =
   'Discipline: run the relevant tests/lint yourself before reporting. Your ONLY output is the schema-bounded JSON. Do NOT restate diffs or narrate steps ("now I will...") — changes live in the files and are reviewed via git diff.'
 const HARNESS_BRIEF = scoutHarness ? `Verification surface (from scout): ${JSON.stringify(scoutHarness.commands || scoutHarness.findings)}` : ''
 
-const buildOnce = async (u, model, extra, label) => {
+const buildOnce = async (u, model, extra, label, effort) => {
   if (!canSpawn()) return null
   spawned++
   return agent(
     `You are the EXECUTOR for one unit of a larger conducted task. Implement it directly in the real files.\n\nUnit: ${u.title}\nSpec: ${u.spec}\nOwn (the ONLY files you may modify): ${u.own.length ? u.own.join(', ') : '(unrestricted — single-unit run)'}\nRead first (smallest sufficient set): ${u.refs.length ? u.refs.join(', ') : '(discover the minimal set yourself)'}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\n${HARNESS_BRIEF}\n${extra ? `\n${extra}\n` : ''}\n${SILENT_RULES}`,
-    { label, phase: 'Execute', model, schema: BUILD_SCHEMA }
+    { label, phase: 'Execute', model, schema: BUILD_SCHEMA, ...(effort ? { effort } : {}) }
   )
 }
 const verifyOnce = async (u, build, label) => {
@@ -354,7 +429,7 @@ const verifyOnce = async (u, build, label) => {
   spawned++
   return agent(
     `Adversarially verify this unit against its acceptance criteria and DoD. Re-read the changed files; run the relevant tests yourself if runnable. Be skeptical — default to pass=false unless the evidence clearly supports it.\n\nUnit: ${u.title}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nBuilder report: ${JSON.stringify(build)}`,
-    { label, phase: 'Execute', model: VERIFY_MODEL, schema: VERIFY_SCHEMA }
+    { label, phase: 'Execute', model: u.check ? u.check.model : VERIFY_MODEL, schema: VERIFY_SCHEMA, ...(u.check ? { effort: u.check.effort } : {}) }
   )
 }
 
@@ -367,7 +442,8 @@ const runUnit = async (u) => {
     return { id: u.id, title: u.title, status: 'skipped-budget', escalation: 'none' }
   }
 
-  const unitModel = u.tier === 'opus' ? 'opus' : EXEC_DEFAULT
+  const unitModel = u.exec ? u.exec.model : u.tier === 'opus' ? 'opus' : EXEC_DEFAULT
+  const unitEffort = u.exec ? u.exec.effort : undefined
   let escalation = 'none'
   let lastBuild = null
   let lastVerify = null
@@ -378,7 +454,7 @@ const runUnit = async (u) => {
       attempt > 1 && lastVerify
         ? `Previous attempt failed verification: ${JSON.stringify(lastVerify.failures || lastVerify.reason)}. Fix the cause, not the symptom.`
         : ''
-    lastBuild = await buildOnce(u, unitModel, feedback, `build:${u.id}#${attempt}`)
+    lastBuild = await buildOnce(u, unitModel, feedback, `build:${u.id}#${attempt}`, unitEffort)
     if (!lastBuild) break // budget gate or agent death — fall through to the ladder/settle
     lastVerify = await verifyOnce(u, lastBuild, `verify:${u.id}#${attempt}`)
     if (lastVerify === null) {
@@ -404,7 +480,7 @@ const runUnit = async (u) => {
     )
     if (advice) {
       const guided = `Escalation diagnosis from the advisor — follow this plan:\nRoot cause: ${advice.rootCause}\nPlan: ${(advice.plan || []).join(' / ')}\nDo NOT repeat: ${(advice.mustNotRepeat || []).join(' / ')}`
-      lastBuild = await buildOnce(u, unitModel, guided, `build:${u.id}#advised`)
+      lastBuild = await buildOnce(u, unitModel, guided, `build:${u.id}#advised`, unitEffort)
       if (lastBuild) {
         lastVerify = await verifyOnce(u, lastBuild, `verify:${u.id}#advised`)
         if (lastVerify === null) {
@@ -486,6 +562,7 @@ return {
   dod: DOD,
   orchestrator: { model: ORCH_MODEL, plans: orchPlans, reviews: orchReviews, dataSensitive: A.dataSensitive === true },
   escalations: { diagnoses: diagCount, rebuilds: rebuildCount },
+  routing,
   groups: groups.length,
   unitsDone: done,
   unitsFailed: failedUnits.map((r) => ({ id: r.id, title: r.title, verify: r.verify })),

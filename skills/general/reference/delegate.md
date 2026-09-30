@@ -18,6 +18,7 @@ Workflow({
 })
 ```
 
+- **Jev routing (optional, via the `strata-assist` mod):** when the mod is installed and a TypeSafe key is set, it injects `args.jev` before the run (never under `dataSensitive`). After the plan, ONE haiku relay calls the mod's `route` tool: Jev proposes a `(model, effort)` per build/verify unit from 5 arms (haiku/low · sonnet/low · sonnet/medium · opus/medium · opus/high). The script re-enforces the bands (never fable; verify ≥ sonnet), keeps the planner tier unless Jev is confident (≥0.8) and blast radius is low (<2) for a downgrade, and falls back to the static tiers on any failure. Decisions + Jev features go to `~/.claude/strata/routes.jsonl`; the run returns `routing`. Do not pass `jev` yourself — the mod sets it.
 - **Escalation ladder (per unit):** build+verify ×2 at the base tier → apex **advise** (≤10-step plan, output-light) → guided retry → apex **rebuild** on a clean slate (failed patches reverted via `git restore`, no failure-history carryover). Literal caps: `APEX_ADVISE_PER_UNIT=1`, `APEX_BUILD_PER_UNIT=1`.
 - **Charter exception, on purpose:** the default builder is **opus** — delegate is single-task execution (≤6 units, sequential), not bulk fan-out. The apex tier is never a unit default and never bulk; `fable` appears only as `APEX_MODEL`.
 - **Apex fallback:** if the fable call dies (cost window, classifier fallback to Opus 4.8, unavailability), the run degrades to opus once and logs it — it never dies on tier availability.

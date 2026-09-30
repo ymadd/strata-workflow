@@ -1,6 +1,6 @@
 {
   "name": "strata-assist",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live input assist for Strata: shows how a /strata-workflow command parses (mode, domain, cap, agents) and a Jev-predicted auto-route while you type.",
   "author": { "name": "yamato kobayashi", "url": "https://github.com/ymadd" },
   "types": "./types/index.d.ts"
