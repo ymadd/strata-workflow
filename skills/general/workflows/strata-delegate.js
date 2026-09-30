@@ -46,10 +46,10 @@ const APEX_BUILD_PER_UNIT = 1 // stage 3: clean-slate rebuild — the only apex 
 // The apex tier is a spend-gated escalation, NOT a config knob: it must not be copied into any other
 // mode's model selection. Both verifiers (verify-invariants.js + check-invariants.sh) fail the build
 // if the literal 'fable' appears outside this APEX line in any workflow — containment is mechanical.
-// ⏳ KILL SWITCH (2026-06-13): the US government halted Fable 5. While true, the apex tier is forced
-// to opus regardless of args — no dead fable call + fallback churn. Flip to false to restore the apex
-// when the halt lifts (single point of restoration; see delegation-spec.md §0b).
-const FABLE_HALTED = true
+// KILL SWITCH: set true to force the apex tier to opus regardless of args (e.g. if fable becomes
+// unavailable again — it was halted 2026-06-13 and restored 2026-10-01 with Fable 5.1). Single point of
+// control; see delegation-spec.md §0b.
+const FABLE_HALTED = false
 const APEX_DEFAULT = 'fable' // the only place outside APEX_MODEL the apex tier may be named
 const APEX_MODEL = FABLE_HALTED ? 'opus' : A.dataSensitive === true ? 'opus' : A.apex === 'opus' ? 'opus' : APEX_DEFAULT
 // dataSensitive: Mythos-class retention (30-day + human-access logging) differs from standard
@@ -108,14 +108,14 @@ log(
 // ---- apex caller: counts its own spawns; falls back to opus once if the apex tier errors out
 // (cost-window removal, classifier fallback, unavailability — the run must degrade, not die) ----
 const apexAgent = async (prompt, opts) => {
-  const first = await agent(prompt, { ...opts, model: APEX_MODEL })
+  const first = await agent(prompt, { ...opts, model: APEX_MODEL, effort: 'high' })
   if (first !== null) return first
   if (APEX_MODEL === 'opus') return null
   if (!canSpawn()) return null
   spawned++
   const optLabel = (opts && opts.label) || 'apex'
   log(`apex tier unavailable for "${optLabel}" — falling back to opus`)
-  return agent(prompt, { ...opts, label: `${optLabel}:fallback-opus`, model: 'opus' })
+  return agent(prompt, { ...opts, label: `${optLabel}:fallback-opus`, model: 'opus', effort: 'high' })
 }
 
 // ---- schemas: schema-bounded output IS the output discipline (no narration to suppress) ----
@@ -292,7 +292,7 @@ const buildOnce = async (u, model, extra, label, effort) => {
   spawned++
   return agent(
     `You are the EXECUTOR for one unit of a larger task. Implement it directly in the real files.\n\nUnit: ${u.title}\nSpec: ${u.spec}\nRead first (smallest sufficient set): ${u.refs && u.refs.length ? u.refs.join(', ') : '(discover the minimal set yourself)'}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\n${extra ? `\n${extra}\n` : ''}\n${SILENT_RULES}`,
-    { label, phase: 'Execute', model, schema: BUILD_SCHEMA, ...(effort ? { effort } : {}) }
+    { label, phase: 'Execute', model, schema: BUILD_SCHEMA, effort: effort || 'medium' }
   )
 }
 const verifyOnce = async (u, build, label) => {
@@ -300,7 +300,7 @@ const verifyOnce = async (u, build, label) => {
   spawned++
   return agent(
     `Adversarially verify this unit against its acceptance criteria and DoD. Re-read the changed files; run the relevant tests yourself if runnable. Be skeptical — default to pass=false unless the evidence clearly supports it.\n\nUnit: ${u.title}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nBuilder report: ${JSON.stringify(build)}`,
-    { label, phase: 'Execute', model: u.check ? u.check.model : VERIFY_MODEL, schema: VERIFY_SCHEMA, ...(u.check ? { effort: u.check.effort } : {}) }
+    { label, phase: 'Execute', model: u.check ? u.check.model : VERIFY_MODEL, schema: VERIFY_SCHEMA, effort: u.check ? u.check.effort : 'medium' }
   )
 }
 

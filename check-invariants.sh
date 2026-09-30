@@ -513,6 +513,17 @@ for f in strata-conduct.js strata-delegate.js; do
 done
 grep_require "${WF}/strata-conduct.js" "opusUnits >= OPUS_UNIT_CAP" "conduct: routed opus upgrades bounded by OPUS_UNIT_CAP"
 
+# Effort pinned per role: no agent may silently inherit the main loop's (often high/xhigh) effort.
+# Heuristic: a line that sets both a label and a model for agent() must also set effort.
+effort_gap=0
+for f in "${WF}"/strata-*.js; do
+  if grep -nE "label.*\bmodel: [A-Za-z_.']+" "$f" | grep -v "effort" | grep -q .; then
+    FAIL "$(basename "$f"): agent call with a model but no pinned effort"
+    effort_gap=1
+  fi
+done
+[[ "$effort_gap" -eq 0 ]] && PASS "effort pinned at every labelled agent call site"
+
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════════

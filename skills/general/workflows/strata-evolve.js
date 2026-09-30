@@ -38,6 +38,9 @@ const HARD_LIMIT = 950 // runtime lifetime-agent backstop; never exceed
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // pm/director/ideate/synth = opus (the brains). build/revise = sonnet. grade = sonnet (cheap mechanical check).
 const TIER = { pm: 'opus', director: 'opus', ideate: 'opus', build: 'sonnet', grade: 'sonnet', revise: 'sonnet', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { pm: 'high', director: 'high', ideate: 'high', build: 'medium', grade: 'low', revise: 'medium', synth: 'high' }
 if (A.tierHint === 'cheap') TIER.ideate = 'sonnet' // never cheap the pm/director judgment; ideation can be cheaper
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
@@ -276,7 +279,7 @@ if (canSpawn()) {
           `USER VISION:\n${VISION}\n` +
           (A.goal ? `\nUSER-PROVIDED GOAL CONTRACT (honor it):\n${JSON.stringify(A.goal, null, 2)}\n` : '') +
           `\nProduce objective, concrete checkable acceptanceCriteria, ordered priorities, scope, and nonGoals. The acceptanceCriteria are the definition of done — be specific enough that another agent can verify each one.`,
-        { label: 'pm:charter', phase: 'Charter', model: TIER.pm, schema: CHARTER_SCHEMA }
+        { label: 'pm:charter', phase: 'Charter', model: TIER.pm, effort: EFFORT.pm, schema: CHARTER_SCHEMA }
       )) || charter
   } catch (e) {
     /* keep the fallback charter */
@@ -294,7 +297,7 @@ if (IDEATION === 'bold' && canSpawn()) {
     ideas =
       (await agent(
         `You are an inventive product/eng lead. Propose BOLD ideas that would make this product meaningfully better than the literal spec — features, architecture choices, UX wins, robustness. Score each by value (to the user) and risk/cost.\n\n${charterBlock}\n\nPropose 4-8 ideas; do not implement anything.`,
-        { label: 'ideate', phase: 'Ideate', model: TIER.ideate, schema: IDEATION_SCHEMA }
+        { label: 'ideate', phase: 'Ideate', model: TIER.ideate, effort: EFFORT.ideate, schema: IDEATION_SCHEMA }
       )) || ideas
   } catch (e) {
     ideas = { ideas: [] }
@@ -305,7 +308,7 @@ if (IDEATION === 'bold' && canSpawn()) {
     try {
       const sel = await agent(
         `You are the PRODUCT MANAGER deciding which proposed ideas to fold into the build. Adopt only ideas that are ON-VISION and value-high / risk-low — protect the charter, don't gold-plate.\n\n${charterBlock}\n\nIDEAS:\n${JSON.stringify(candidates2, null, 2)}\n\nReturn the titles to adopt.`,
-        { label: 'pm:select-ideas', phase: 'Ideate', model: TIER.pm, schema: IDEA_SELECT_SCHEMA }
+        { label: 'pm:select-ideas', phase: 'Ideate', model: TIER.pm, effort: EFFORT.pm, schema: IDEA_SELECT_SCHEMA }
       )
       const adopt = new Set((sel && sel.adopt) || [])
       adoptedIdeas = candidates2.filter((i) => adopt.has(i.title))
@@ -328,7 +331,7 @@ if (canSpawn()) {
   try {
     const plan = await agent(
       `You are the ENGINEERING DIRECTOR. Draft an EMERGENT phase plan to build this — phases tailored to THIS product, not a fixed template. Order them so each builds on the last. Keep it lean; you can subdivide later when a phase proves important or risky.\n\n${visionBlock}\n\nWORKING DIRECTORY: ${ROOT} (workers write real files here).\n\nReturn 3-7 phases, each with a goal, kind, and a suggested worker count (1-6).`,
-      { label: 'director:plan', phase: 'Plan', model: TIER.director, schema: PHASE_LIST_SCHEMA }
+      { label: 'director:plan', phase: 'Plan', model: TIER.director, effort: EFFORT.director, schema: PHASE_LIST_SCHEMA }
     )
     queue = ((plan && plan.phases) || []).map((p, i) => ({ ...p, agents: clampAgents(p.agents), depth: 0, id: `P${i + 1}` }))
   } catch (e) {
@@ -382,7 +385,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
         `You are a senior engineer EXECUTING one phase of an evolving build. Do the actual work and WRITE REAL FILES under ${ROOT} (create/modify on disk; do not just describe).\n\n${visionBlock}\n\n` +
           `CURRENT PHASE [${ph.id}/${ph.kind}]: ${ph.goal}${ph.repairFocus ? `\nREPAIR FOCUS: ${ph.repairFocus}` : ''}${slice}\n\n` +
           `Build to the charter's quality bar. Report the files you wrote, key decisions, and an honest selfScore.`,
-        { label: `build:${ph.id}${want > 1 ? `#${w + 1}` : ''}`, phase: evolveLabel, model: TIER.build, schema: WORKER_SCHEMA }
+        { label: `build:${ph.id}${want > 1 ? `#${w + 1}` : ''}`, phase: evolveLabel, model: TIER.build, effort: EFFORT.build, schema: WORKER_SCHEMA }
       )
     )
   }
@@ -400,7 +403,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
         (await agent(
           `Audit the output of this build phase against its goal. Read the files that were written and check for real defects (correctness, completeness, integration). Be concrete.\n\n` +
             `PHASE [${ph.id}/${ph.kind}]: ${ph.goal}\nFILES WRITTEN: ${phaseFiles.join(', ') || '(none reported)'}\nWORKER NOTES: ${built.map((b) => b.notes).filter(Boolean).join(' | ').slice(0, 800)}\n\nReturn meetsPhaseGoal, a 0-100 score, and any issues.`,
-          { label: `grade:${ph.id}`, phase: evolveLabel, model: TIER.grade, schema: GRADE_SCHEMA }
+          { label: `grade:${ph.id}`, phase: evolveLabel, model: TIER.grade, effort: EFFORT.grade, schema: GRADE_SCHEMA }
         )) || grade
     } catch (e) {
       /* keep optimistic fallback */
@@ -424,7 +427,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
             `Choose:\n- pass: the phase met its goal; advance.\n- subdivide: this phase is IMPORTANT, RISKY, or UNDERDONE — split it into finer sub-phases (each with focused agents) that will be inserted next. Use this to pour MORE effort exactly where it matters.\n- repair: re-run the failed parts (give repairFocus).\n` +
             (ph.depth >= MAX_DEPTH ? `\nNOTE: max subdivision depth reached for this branch — do NOT subdivide; choose pass or repair.\n` : '') +
             `Set productImpact=true if the product changed enough that the PM should re-check vision now.`,
-          { label: `director:${ph.id}`, phase: evolveLabel, model: TIER.director, schema: DIRECTOR_SCHEMA }
+          { label: `director:${ph.id}`, phase: evolveLabel, model: TIER.director, effort: EFFORT.director, schema: DIRECTOR_SCHEMA }
         )) || dir
     } catch (e) {
       /* keep pass fallback */
@@ -454,7 +457,7 @@ while (queue.length && phasesRun < MAX_PHASES && canSpawnWork()) {
             `FILES: ${[...new Set(artifacts.flatMap((a) => a.filesWritten || []))].slice(0, 50).join(', ')}\n` +
             `REMAINING PLANNED PHASES: ${queue.map((q) => `${q.id}:${q.kind}`).join(', ') || '(none)'}\n\n` +
             `Set adopt=true to take the Director's decision as-is. Set adopt=false and an override (pass/repair/subdivide) to change it, or keep the decision but use subPhasesKeep to trim the sub-phases. Set goalMet=true ONLY when every acceptanceCriterion is satisfied. Append revisePhases only for genuinely missing work.`,
-          { label: `pm:select:${ph.id}`, phase: evolveLabel, model: TIER.pm, schema: PM_SELECT_SCHEMA }
+          { label: `pm:select:${ph.id}`, phase: evolveLabel, model: TIER.pm, effort: EFFORT.pm, schema: PM_SELECT_SCHEMA }
         )) || pm
       pmFinal = { onVision: pm.onVision, goalMet: pm.goalMet, residual: pm.residual || pmFinal.residual || [], reason: pm.reason }
     } catch (e) {
@@ -540,7 +543,7 @@ try {
       `FILES TOUCHED: ${[...new Set(artifacts.flatMap((a) => a.filesWritten || []))].slice(0, 80).join(', ')}\n` +
       `PM FINAL: goalMet=${pmFinal.goalMet}, residual=${JSON.stringify(pmFinal.residual || [])}\n\n` +
       `Write deliverableSummary (incl. how to run/use it), a healthGrade A-F, the evolutionLog, openItems, and an honest coverageNote about anything the budget left unfinished. Keep deliverableSummary tight — what was built and how to use it; do NOT restate the workers' phase summaries or file contents (the files ARE the deliverable).`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null')
 } catch (e) {

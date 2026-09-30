@@ -32,6 +32,9 @@ const AGENT_ROOF = 40
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // scope = haiku (enumerate). review/verify = sonnet (reason about real code). synth = opus (judgment + verdict).
 const TIER = { scope: 'haiku', review: 'sonnet', verify: 'sonnet', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { scope: 'low', review: 'medium', verify: 'medium', synth: 'high' }
 if (A.tierHint === 'cheap') TIER.review = 'haiku' // shallow pass: drop reviewers to haiku (verify/synth stay as-is)
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on the refutation when correctness is critical
 
@@ -222,7 +225,7 @@ if (canSpawn()) {
     scope =
       (await agent(
         `Enumerate the changed files in this review target so reviewers know exactly what to scrutinize. Do not review yet — just list the touched files with a one-line summary each, and a short overview of what the change does.\n${TARGET_NOTE}\n${SCOPE_INSTRUCTION}${SCOPE_CONV_TASK}`,
-        { label: 'scope', phase: 'Scope', model: TIER.scope, schema: SCOPE_SCHEMA }
+        { label: 'scope', phase: 'Scope', model: TIER.scope, effort: EFFORT.scope, schema: SCOPE_SCHEMA }
       )) || scope
   } catch (e) {
     scope = { files: [], overview: '', conventions: '' }
@@ -260,7 +263,7 @@ const found = await pipeline(DIMS, (dim) => {
   return agent(
     `You are a senior reviewer examining a code change through ONE lens only: "${dim}". Ignore issues outside this lens — another reviewer covers those.\n${TARGET_NOTE}${GROUND_BLOCK}${SCOPE_BLOCK}\n${SCOPE_INSTRUCTION}\n\n` +
       `Read the actual changed code. Report only concrete, real issues — each MUST cite file:line in location and quote the offending code in evidence. Do not invent issues to fill a quota; an empty findings list is a valid result for a clean change.${fixClause}`,
-    { label: `review:${dim.split(' ')[0]}`, phase: 'Review', model: TIER.review, schema: FINDINGS_SCHEMA }
+    { label: `review:${dim.split(' ')[0]}`, phase: 'Review', model: TIER.review, effort: EFFORT.review, schema: FINDINGS_SCHEMA }
   )
 })
 
@@ -319,7 +322,7 @@ for (const it of items) {
     thunks.push(() =>
       agent(
         `Try to REFUTE this review finding. Re-read the cited code at ${it.location} and decide whether it is a REAL issue or a false positive. Be skeptical — a finding survives only if the evidence clearly supports it; default isReal=false when uncertain. If the severity is mis-rated, set revisedSeverity.\n${GROUND_BLOCK}\nFINDING:\n${JSON.stringify({ title: it.title, severity: it.severity, location: it.location, evidence: it.evidence, rationale: it.rationale })}`,
-        { label: `verify:${String(it.title).slice(0, 28)}`, phase: 'Verify', model: TIER.verify, schema: VERDICT_SCHEMA }
+        { label: `verify:${String(it.title).slice(0, 28)}`, phase: 'Verify', model: TIER.verify, effort: EFFORT.verify, schema: VERDICT_SCHEMA }
       )
     )
   }
@@ -355,7 +358,7 @@ try {
       `- blocking: list only the must-fix (CRITICAL/HIGH) items.\n` +
       `- coverageNote: state honestly what was NOT reviewed (dimensions or files skipped by the agent budget).\n` +
       `Do not pad the report with non-issues. If the change is clean, say so plainly.`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   // agent() can resolve to null (e.g. the run is skipped) WITHOUT throwing — route that into the
   // fail-open below instead of letting `synthesis.verdict` throw an uncaught TypeError later.

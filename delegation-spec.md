@@ -19,7 +19,7 @@
 
 ### 0b. 期限付き情報(⏳ 失効日を過ぎたらこの節を更新するまで信用しない)
 
-- 🛑 **2026-06-13〜 fable 停止中(米国政府による Fable 5 の停止)**: apex/orchestrator 層は使用不可。コード側 kill switch(`strata-delegate.js` / `strata-conduct.js` の `FABLE_HALTED = true`)が apex/orch を **opus に強制**しているため、delegate/conduct は opus で継続稼働する(エスカレーション梯子・verify ゲート・並列分割の構造はそのまま有効)。ルーターは両モードを自動ルート先に残すが「fable halted → opus」と明示する。**復旧時**: 本項を再検証 → 両ファイルの `FABLE_HALTED` を `false` に戻す(復旧点はこの2箇所のみ)→ §7/§8 のルーティングを再開。停止解除日は未確定 — 予告なく再変動する前提で扱う。
+- ✅ **2026-10-01〜 fable 復旧(Fable 5.1)**: 2026-06-13〜の停止(米国政府による Fable 5 の停止)は解除扱い。両ファイル(`strata-delegate.js` / `strata-conduct.js`)の `FABLE_HALTED` を `false` に戻し、§7/§8 のルーティングを再開した。再び使えなくなったら両フラグを `true` にする(apex/orch を opus に強制、他の構造は不変)。予告なく再変動する前提で扱う。
 - **〜2026-06-22**: Pro/Max/Team/seat-based Enterprise に無料同梱。
 - **2026-06-23〜**: usage credit 必要。容量回復後に standard 復帰予定(時期未定 — 予告なく再変動する前提で扱う)。
 - 失効時の扱い: この節を再検証・更新してから §7 を運用する。

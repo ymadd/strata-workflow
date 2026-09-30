@@ -35,6 +35,9 @@ const AGENT_ROOF = 40
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // frame/synth = opus (the reasoning IS the value). investigate/refute = sonnet. extraction = haiku.
 const TIER = { frame: 'opus', investigate: 'sonnet', refute: 'sonnet', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { frame: 'high', investigate: 'medium', refute: 'medium', synth: 'high' }
 if (A.tierHint === 'cheap') TIER.frame = 'sonnet' // synth stays opus — never cheap the final integration
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
@@ -212,7 +215,7 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
         (FRAMING ? `\nFRAMING GUIDANCE (domain method — follow it):\n${FRAMING}\n` : '') +
         priorBlock +
         `\nPropose up to ${HYP_PER_ROUND} hypotheses. Prefer the ones that, if tested, most reduce uncertainty about the question. Set exhausted=true only if no fresh, testable hypothesis remains.`,
-      { label: `frame:r${round}`, phase: groupLabel, model: TIER.frame, schema: FRAME_SCHEMA }
+      { label: `frame:r${round}`, phase: groupLabel, model: TIER.frame, effort: EFFORT.frame, schema: FRAME_SCHEMA }
     )
     if (!frame) throw new Error('frame returned null')
   } catch (e) {
@@ -240,7 +243,7 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
           `\nHYPOTHESIS: ${h.hypothesis}\nWOULD CONFIRM: ${h.confirmIf}\nWOULD REFUTE: ${h.refuteIf}\n\n` +
           sourceNote +
           `\nReport the support level honestly — "inconclusive" and "unsupported" are valid, useful outcomes. Attach your evidence with sources.`,
-        { label: `investigate:r${round}:${norm(h.hypothesis).slice(0, 28)}`, phase: groupLabel, model: TIER.investigate, schema: INVESTIGATE_SCHEMA }
+        { label: `investigate:r${round}:${norm(h.hypothesis).slice(0, 28)}`, phase: groupLabel, model: TIER.investigate, effort: EFFORT.investigate, schema: INVESTIGATE_SCHEMA }
       ).then((inv) => ({ h, inv }))
     },
     (prev) => {
@@ -255,7 +258,7 @@ for (let round = 1; round <= MAX_ROUNDS; round++) {
           qBlock +
           `\nHYPOTHESIS: ${prev.h.hypothesis}\n\nINVESTIGATOR'S CASE:\n${JSON.stringify(inv, null, 2)}\n\n` +
           (GROUNDED ? 'You may use WebSearch/WebFetch to check the cited sources actually say what is claimed.' : ''),
-        { label: `refute:r${round}:${norm(prev.h.hypothesis).slice(0, 28)}`, phase: groupLabel, model: TIER.refute, schema: REFUTE_SCHEMA }
+        { label: `refute:r${round}:${norm(prev.h.hypothesis).slice(0, 28)}`, phase: groupLabel, model: TIER.refute, effort: EFFORT.refute, schema: REFUTE_SCHEMA }
       ).then((ref) => ({ h: prev.h, investigation: inv, refute: ref, surviving: !!(ref && ref.holds) }))
     }
   )
@@ -286,7 +289,7 @@ try {
         2
       )}\n\n` +
       `Carry citations through to keyFindings. Do not overclaim — calibrate the confidence to the evidence that actually survived. List the next experiments that would raise confidence.`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null')
 } catch (e) {

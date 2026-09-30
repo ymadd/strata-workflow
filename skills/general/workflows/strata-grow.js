@@ -173,7 +173,7 @@ async function buildUnit(spec, round) {
     )}\nAlso self-assess honestly: set needsAdvice=true ONLY for a genuinely tricky combo where an expert tip would materially raise quality, and put your precise question in adviceQuestion. Set id=kebab slug, category=${
       spec.a != null ? 'the component type' : 'a short category'
     }, tags=[style + 1-2 descriptors].`,
-    { label: `draft:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: UNIT_MODEL, schema: DRAFT_SCHEMA }
+    { label: `draft:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: UNIT_MODEL, effort: 'medium', schema: DRAFT_SCHEMA }
   )
   if (!draft) return null
   const lowConfidence = typeof draft.selfScore === 'number' && draft.selfScore < ADVICE_THRESHOLD
@@ -184,7 +184,7 @@ async function buildUnit(spec, round) {
       `An expert is consulted by a running builder. Unit: ${JSON.stringify(spec)}. The builder asks: "${
         draft.adviceQuestion || 'How do I make this expert-level?'
       }". Their current draft CSS/JS approach: ${(draft.css || '').slice(0, 900)}\n\nGive concise, concrete, immediately-applicable expert guidance to raise it to opus-level (techniques, the right CSS/JS approach, pitfalls). Keep CSS scoping rules intact.`,
-      { label: `advice:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: ADVICE_MODEL, schema: ADVICE_SCHEMA }
+      { label: `advice:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: ADVICE_MODEL, effort: 'high', schema: ADVICE_SCHEMA }
     )
     if (adv && adv.advice && canBuild()) {
       spawned++
@@ -192,7 +192,7 @@ async function buildUnit(spec, round) {
         `${A.task}\n\n${INSTRUCTIONS}\n\nUnit: ${JSON.stringify(spec)}. Your earlier draft, now improve it using this EXPERT ADVICE:\n${
           adv.advice
         }\n\nReturn the final, polished component.`,
-        { label: `revise:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: UNIT_MODEL, schema: COMP_SCHEMA }
+        { label: `revise:${cellKey(spec)}`, phase: `Round ${round} · Build`, model: UNIT_MODEL, effort: 'medium', schema: COMP_SCHEMA }
       )
       if (revised) return revised
     }
@@ -213,7 +213,7 @@ async function auditRound(comps, round) {
         `Audit these UI components (JSON). For each: would it render and visibly animate? is ALL CSS scoped under one unique .uic-<slug> wrapper (no global leaks)? any undefined SVG filter? broken/empty? Grade 0-100. Return {id, score, ok (score>=${FLOOR} AND not broken), broken, issue(<=12 words)}.\n\n${JSON.stringify(
           g.map(slim)
         )}`,
-        { label: `audit:r${round}`, phase: `Round ${round} · Audit`, model: AUDIT_MODEL, schema: AUDIT_SCHEMA }
+        { label: `audit:r${round}`, phase: `Round ${round} · Audit`, model: AUDIT_MODEL, effort: 'high', schema: AUDIT_SCHEMA }
       )
     })
   )
@@ -263,7 +263,7 @@ async function goalCheck(round) {
       }; audit avg=${st.auditAvg}/100; categories=${JSON.stringify(st.catCounts)}; recent systemic issues=${JSON.stringify(
         systemic.slice(-5)
       )}.\nAre the done-criteria MET? If NOT, list concrete residual gaps to close next (these become the next round's priorities).`,
-      { label: `goal-check:r${round}`, phase: `Round ${round} · Goal-check`, model: 'opus', schema: GOALCHECK_SCHEMA }
+      { label: `goal-check:r${round}`, phase: `Round ${round} · Goal-check`, model: 'opus', effort: 'high', schema: GOALCHECK_SCHEMA }
     )
     criticMet = !!(critic && critic.met)
     residual = (critic && critic.residual) || []
@@ -323,7 +323,7 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
       (systemic.length ? `Recent audit systemic issues to steer AROUND: ${JSON.stringify(systemic.slice(-6))}.\n` : '') +
       (goalResidual.length ? `PRIORITIES to close next (from the goal-check): ${JSON.stringify(goalResidual.slice(0, 6))}. Bias this batch toward these.\n` : '') +
       `Propose the NEXT batch of up to ${roundCap} specs as {a,b} pairs (do NOT exceed ${roundCap}): FIRST any uncovered seed-grid cells; only when the seed grid is exhausted, EXPAND by inventing NEW component types (a) and/or styles (b) not yet present. Keep them distinct. Set domainExhausted=true ONLY if you truly cannot propose anything fresh.`,
-    { label: `plan:r${round}`, phase: `Round ${round} · Plan`, model: PLAN_MODEL, schema: PLAN_SCHEMA }
+    { label: `plan:r${round}`, phase: `Round ${round} · Plan`, model: PLAN_MODEL, effort: 'high', schema: PLAN_SCHEMA }
   )
   let specs = ((plan && plan.specs) || []).filter((s) => s && !covered.has(cellKey(s)))
   specs = specs.slice(0, roundCap)
@@ -379,7 +379,7 @@ while (can() && round < MAX_ROUNDS && dryStreak < 2) {
               )}". Rebuild it fixing that defect (especially: scope ALL CSS under .uic-<slug>; define SVG filters inline; ensure it animates). Category: ${
                 c.category
               }; keep the same id "${c.id}". Title/tags as before.`,
-              { label: `repair:${c.id}`, phase: `Round ${round} · Repair`, model: UNIT_MODEL, schema: COMP_SCHEMA }
+              { label: `repair:${c.id}`, phase: `Round ${round} · Repair`, model: UNIT_MODEL, effort: 'medium', schema: COMP_SCHEMA }
             )
           })
         )

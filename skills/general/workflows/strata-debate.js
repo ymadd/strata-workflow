@@ -39,6 +39,9 @@ const AGENT_ROOF = 40
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // argue/rebut = sonnet (DRAFT). judge/synth = opus (the value of a debate IS the judgment).
 const TIER = { argue: 'sonnet', rebut: 'sonnet', judge: 'opus', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { argue: 'medium', rebut: 'medium', judge: 'high', synth: 'high' }
 // hard = spend opus on the arguments when the stakes are very high. Promote BOTH argue AND rebut:
 // an ablation (rebut-opus vs all-opus vs all-sonnet, blind-judged) found the discriminating lift —
 // surfacing the unstated crux, decision-usefulness — comes from opus on the judgment-adjacent REBUTTAL
@@ -243,7 +246,7 @@ for (let i = 0; i < P; i++) {
         propBlock +
         groundNote +
         `\nBe concrete and specific. State a sharp thesis and the load-bearing points that support it.`,
-      { label: `open:${pos.slice(0, 24)}`, phase: 'Open', model: TIER.argue, schema: OPEN_SCHEMA }
+      { label: `open:${pos.slice(0, 24)}`, phase: 'Open', model: TIER.argue, effort: EFFORT.argue, schema: OPEN_SCHEMA }
     ).then((r) => ({ position: pos, content: r }))
   )
 }
@@ -282,7 +285,7 @@ for (let round = 1; round <= ROUNDS; round++) {
           `\nFULL RECORD SO FAR:\n${priorRecord}\n` +
           groundNote +
           `\nBe specific: name the exact opposing claim you target. Do not repeat your opening — advance the argument.`,
-        { label: `rebut:r${round}:${pos.slice(0, 18)}`, phase: 'Rebut', model: TIER.rebut, schema: REBUT_SCHEMA }
+        { label: `rebut:r${round}:${pos.slice(0, 18)}`, phase: 'Rebut', model: TIER.rebut, effort: EFFORT.rebut, schema: REBUT_SCHEMA }
       ).then((r) => ({ position: pos, content: r }))
     )
   }
@@ -307,7 +310,7 @@ try {
       propBlock +
       `\nFULL RECORD:\n${summarize(transcript)}\n\n` +
       `Be discriminating. A claim only "survives" if it was actually tested and held; an untested claim is not a strong one.`,
-    { label: 'judge', phase: 'Judge', model: TIER.judge, schema: JUDGE_SCHEMA }
+    { label: 'judge', phase: 'Judge', model: TIER.judge, effort: EFFORT.judge, schema: JUDGE_SCHEMA }
   )
   if (!verdict) throw new Error('judge agent returned null')
 } catch (e) {
@@ -329,7 +332,7 @@ try {
       `\nMODERATOR VERDICT:\n${JSON.stringify(verdict, null, 2)}\n\n` +
       `FULL RECORD:\n${summarize(transcript)}\n\n` +
       `If the proposition asks for a decision, give the actionable recommendation. Be honest about residual uncertainty — a confident wrong answer is worse than a calibrated one.`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null')
 } catch (e) {

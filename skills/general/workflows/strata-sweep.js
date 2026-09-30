@@ -33,6 +33,9 @@ const HARD_LIMIT = 950 // runtime lifetime-agent backstop; never exceed
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // map = sonnet (must understand structure). review/verify = sonnet. systemic/synth = opus (the cross-cutting judgment).
 const TIER = { map: 'sonnet', review: 'sonnet', verify: 'sonnet', systemic: 'opus', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { map: 'low', review: 'medium', verify: 'medium', systemic: 'high', synth: 'high' }
 if (A.tierHint === 'cheap') TIER.review = 'haiku' // shallow sweep: drop per-unit reviewers to haiku (systemic/synth stay opus)
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on refutation when correctness is paramount
 
@@ -255,7 +258,7 @@ if (canSpawn()) {
           `2) Score each unit's risk 0-10 (10 = security-sensitive, complex, high-churn, or central to the system). Riskiest units get reviewed first.\n` +
           `3) Sketch the architecture (what this is, its layers/entry points) and the conventions the code should be held to.${MAP_CONV_TASK} These feed a later cross-cutting critic.\n` +
           `4) Report totalFiles so coverage can be stated honestly.`,
-        { label: 'map', phase: 'Map', model: TIER.map, schema: MAP_SCHEMA }
+        { label: 'map', phase: 'Map', model: TIER.map, effort: EFFORT.map, schema: MAP_SCHEMA }
       )) || map
   } catch (e) {
     map = { units: [], architecture: '', conventions: '', totalFiles: 0 }
@@ -312,7 +315,7 @@ const reviewUnit = (unit) => {
       `\nUNIT: ${unit.id}  (risk ${unit.risk ?? '?'} — ${unit.reason || ''})\nFILES:\n${unit.paths.map((p) => `- ${p}`).join('\n')}\n\n` +
       `DIMENSIONS:\n${DIM_LINE}\n\n` +
       `Report only concrete, real issues — each MUST cite file:line in location and quote the offending code in evidence. An empty findings list is valid for clean code; do not invent issues to fill a quota.`,
-    { label: `review:${unit.id}`, phase: 'Review', model: TIER.review, schema: FINDINGS_SCHEMA }
+    { label: `review:${unit.id}`, phase: 'Review', model: TIER.review, effort: EFFORT.review, schema: FINDINGS_SCHEMA }
   ).then((r) => ({ unit, findings: (r && r.findings ? r.findings : []).filter((f) => f && f.title && f.location) }))
 }
 const verifyUnit = (reviewed, unit) => {
@@ -340,7 +343,7 @@ const verifyUnit = (reviewed, unit) => {
         thunks.push(() =>
           agent(
             `Try to REFUTE this finding from a codebase review. Re-read the cited code at ${f.location} and decide whether it is a REAL issue or a false positive. Be skeptical; default isReal=false when the evidence does not clearly support it. Set revisedSeverity if it is mis-rated.\n\nFINDING:\n${JSON.stringify({ title: f.title, severity: f.severity, location: f.location, evidence: f.evidence, rationale: f.rationale })}`,
-            { label: `verify:${f.location.split(/[: ]/)[0].split('/').pop()}`, phase: 'Review', model: TIER.verify, schema: VERDICT_SCHEMA }
+            { label: `verify:${f.location.split(/[: ]/)[0].split('/').pop()}`, phase: 'Review', model: TIER.verify, effort: EFFORT.verify, schema: VERDICT_SCHEMA }
           )
         )
       }
@@ -406,7 +409,7 @@ if (canSpawn()) {
           `UNITS DEEP-REVIEWED: ${unitsToReview.map((u) => u.id).join(', ')}\n` +
           (unitsSkipped.length ? `UNITS DEFERRED BY BUDGET (call out if any look high-risk): ${unitsSkipped.map((u) => `${u.id}(risk ${u.risk})`).join(', ')}\n` : '') +
           `\nReport only genuine systemic issues; do not restate single-unit findings. Each needs a theme, the affected areas, and a systemic (often architectural) recommendation.`,
-        { label: 'systemic', phase: 'Systemic', model: TIER.systemic, schema: SYSTEMIC_SCHEMA }
+        { label: 'systemic', phase: 'Systemic', model: TIER.systemic, effort: EFFORT.systemic, schema: SYSTEMIC_SCHEMA }
       )) || systemic
   } catch (e) {
     systemic = { systemicFindings: [] }
@@ -435,7 +438,7 @@ try {
       `SYSTEMIC / CROSS-CUTTING FINDINGS:\n${JSON.stringify(systemicFindings, null, 2)}\n\n` +
       `COVERAGE FACTS (state these plainly in coverageNote — what was reviewed vs deferred by the agent budget, and the verification depth):\n${JSON.stringify(coverageFacts, null, 2)}\n\n` +
       `Write the report: healthGrade A-F; a grouped report (by severity AND theme) combining per-unit and systemic issues, each as "file:line — issue — one-line fix" (do NOT restate evidence or rationale text — the confirmed findings are returned verbatim as data alongside this report); topRisks ranked; and a coverageNote that does NOT overstate completeness. If deferred units look high-risk, say a follow-up sweep is needed.`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open
 } catch (e) {

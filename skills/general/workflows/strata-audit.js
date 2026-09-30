@@ -78,7 +78,7 @@ const audited = await pipeline(batchIdx, (i) => {
 - Does it duplicate another unit (same id or near-identical to a sibling)?
 Grade quality 0-100 (polish, distinctiveness, correctness).${A.task ? ' Task context: ' + A.task : ''}
 Return one verdict per component: {id, score, ok (score>=60 AND not broken), broken, dup, issue}.`,
-    { label: `audit:${pad(i)}`, phase: 'Audit', model: AUDIT_MODEL, schema: BATCH_SCHEMA }
+    { label: `audit:${pad(i)}`, phase: 'Audit', model: AUDIT_MODEL, effort: 'medium', schema: BATCH_SCHEMA }
   )
 })
 const perItem = audited.filter(Boolean).flatMap((b) => (b && b.verdicts ? b.verdicts : []))
@@ -115,7 +115,7 @@ if (canSpawn()) {
       `You are the lead QA critic over a batch of ${A.count} generated UI components (avg quality ${avg}/100; ${broken.length} flagged broken/low <60; ${dups.length} flagged duplicate). Flagged verdicts (JSON): ${JSON.stringify(
         [...broken, ...dups].slice(0, 140)
       )}. Identify SYSTEMIC issues (patterns across many units — e.g. a whole visual style or component-type that consistently fails or looks identical), give an overall letter grade with one sentence, name the worst categories, and produce regenerateIds = the ids worth regenerating (broken/low + clear dups; cap ~80, prioritise the worst).`,
-      { label: 'critic', phase: 'Critic', model: 'opus', schema: CRITIC_SCHEMA }
+      { label: 'critic', phase: 'Critic', model: 'opus', effort: 'high', schema: CRITIC_SCHEMA }
     )
     if (!critic) throw new Error('critic agent returned null') // route a non-throwing null into the fail-open path (convention parity with every other mode's synthesis)
   } catch (e) {

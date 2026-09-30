@@ -11,7 +11,7 @@ export const meta = {
   ],
 }
 
-// ---- args: { task, taskClass?, cap?, maxAgents?, unleashed?, designLenses?, reviewDimensions?, adviceThreshold?, dryStreakLimit?, maxReviewRounds?, maxImprovementRounds?, tierHint? } ----
+// ---- args: { task, taskClass?, cap?, maxAgents?, unleashed?, designLenses?, reviewDimensions?, adviceThreshold?, dryStreakLimit?, maxReviewRounds?, maxImprovementRounds? } ----
 // The workflow runtime threads `args` to the script as a JSON STRING, so normalize it here.
 const A = (() => {
   if (typeof args === 'string') {
@@ -41,7 +41,9 @@ const ADVICE_THRESHOLD = typeof A.adviceThreshold === 'number' && isFinite(A.adv
 
 // ---- model tiers: opus is spawned ONLY where judgment is needed (judge, advice, tie-break, critic, synth) ----
 const TIER = { scout: 'haiku', design: 'sonnet', judge: 'opus', build: 'sonnet', advise: 'opus', review: 'sonnet', verify: 'sonnet', tiebreak: 'opus', repair: 'sonnet', critic: 'opus', synth: 'opus' }
-if (A.tierHint === 'cheap') TIER.design = 'sonnet'
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { scout: 'low', design: 'medium', judge: 'high', build: 'medium', advise: 'high', review: 'medium', verify: 'medium', tiebreak: 'high', repair: 'medium', critic: 'high', synth: 'high' }
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
 const spentNow = () => {
@@ -256,7 +258,7 @@ const maps = (
       spawned++
       return agent(
         `Task to accomplish:\n${A.task}\n\nYou are a scout. Map STRICTLY this angle: "${angle}". Read the real files/sources and report concrete, evidence-backed observations, the hard constraints, and the risks for this angle only.`,
-        { label: `understand:${angle.slice(0, 22)}`, phase: 'Understand', model: TIER.scout, schema: MAP_SCHEMA }
+        { label: `understand:${angle.slice(0, 22)}`, phase: 'Understand', model: TIER.scout, effort: EFFORT.scout, schema: MAP_SCHEMA }
       )
     })
   )
@@ -283,7 +285,7 @@ const approaches = (
       return agent(
         `Task to accomplish:\n${A.task}\n\nUNDERSTANDING (from scouts):\n${JSON.stringify(mapDigest, null, 2)}\n\n` +
           `Propose ONE approach from this lens: "${lens}". Commit to the lens so it is genuinely distinct. Decompose it into concrete, independent work units (each with an id and a clear instruction) that can be built in parallel.`,
-        { label: `design:${lens.slice(0, 20)}`, phase: 'Design', model: TIER.design, schema: APPROACH_SCHEMA }
+        { label: `design:${lens.slice(0, 20)}`, phase: 'Design', model: TIER.design, effort: EFFORT.design, schema: APPROACH_SCHEMA }
       ).then((r) => (r && r.approach ? { index: i, lens, ...r } : null))
     })
   )
@@ -306,7 +308,7 @@ if (approaches.length === 1) {
         null,
         2
       )}\n\nPick the winner that best fits the task and constraints. Name ideas from the losers worth grafting into the build.`,
-    { label: 'design:judge', phase: 'Design', model: TIER.judge, schema: JUDGE_SCHEMA }
+    { label: 'design:judge', phase: 'Design', model: TIER.judge, effort: EFFORT.judge, schema: JUDGE_SCHEMA }
   )
   // agent() can resolve to null without throwing — fall back to the first approach instead of dereferencing null
   const widx = verdict && approaches.some((a) => a.index === verdict.winnerIndex) ? verdict.winnerIndex : approaches[0].index
@@ -324,7 +326,7 @@ const buildOne = (unit, gateFn, lbl) => {
   return agent(
     `Task:\n${A.task}\n\nChosen approach: ${winner.approach}\n${graftBlock}\nBuild THIS work unit only (id "${unit.id}"):\n${unit.instruction}\n\n` +
       `Produce the finished artifact CONTENT in the \`output\` field — do NOT write files to disk or return a path. Set selfScore to your honest 0-100 confidence it fully meets the spec.`,
-    { label: lbl, phase: 'Build', model: TIER.build, schema: BUILD_SCHEMA }
+    { label: lbl, phase: 'Build', model: TIER.build, effort: EFFORT.build, schema: BUILD_SCHEMA }
   )
 }
 
@@ -357,14 +359,14 @@ for (const b of built) {
     spawned++
     const advice = await agent(
       `A builder rated its own work ${b.selfScore}/100 for this task:\n${A.task}\n\nUNIT "${uid}" instruction: ${(workUnits.find((u) => u.id === uid) || {}).instruction || '(gap unit)'}\n\nCURRENT OUTPUT:\n${b.output}\n\nGive expert, specific guidance to lift this unit to top quality — the concrete fixes and the bar it is missing. Do not rewrite it yourself.`,
-      { label: `advise:${uid}`, phase: 'Build', model: TIER.advise, schema: ADVICE_SCHEMA }
+      { label: `advise:${uid}`, phase: 'Build', model: TIER.advise, effort: EFFORT.advise, schema: ADVICE_SCHEMA }
     )
     if (canSpawnDyn()) {
       spawned++
       adviceEscalations++
       const revised = await agent(
         `Task:\n${A.task}\n\nRevise UNIT "${uid}" using this expert advice. Return the full improved artifact CONTENT in \`output\`; do not write files.\n\nADVICE:\n${advice && advice.advice ? advice.advice : ''}\n\nCURRENT:\n${artifacts[uid]}`,
-        { label: `revise:${uid}`, phase: 'Build', model: TIER.build, schema: BUILD_SCHEMA }
+        { label: `revise:${uid}`, phase: 'Build', model: TIER.build, effort: EFFORT.build, schema: BUILD_SCHEMA }
       )
       if (revised && revised.output) artifacts = { ...artifacts, [uid]: revised.output }
     }
@@ -394,7 +396,7 @@ const reviewUntilDry = async () => {
           return agent(
             `Task being delivered:\n${A.task}\n\nCURRENT ARTIFACTS (unitId -> output):\n${artifactsJson}\n\n` +
               `Review STRICTLY for: "${dim}". Report only concrete, evidence-backed issues, each tied to its unitId, with a suggested fix. Empty list if none.`,
-            { label: `review:${dim.slice(0, 16)}#${improvementRounds}.${round}`, phase: 'Review', model: TIER.review, schema: ISSUES_SCHEMA }
+            { label: `review:${dim.slice(0, 16)}#${improvementRounds}.${round}`, phase: 'Review', model: TIER.review, effort: EFFORT.review, schema: ISSUES_SCHEMA }
           )
         })
       )
@@ -416,7 +418,7 @@ const reviewUntilDry = async () => {
             spawned++
             return agent(
               `Adversarially verify this review issue against the artifact. Default to isReal=false unless the evidence clearly supports it.\n\nISSUE:\n${JSON.stringify(it)}\n\nARTIFACT unit "${it.unitId}":\n${artifacts[it.unitId] ?? '(not found)'}`,
-              { label: `verify:${it.title.slice(0, 16)}`, phase: 'Review', model: TIER.verify, schema: VERDICT_SCHEMA }
+              { label: `verify:${it.title.slice(0, 16)}`, phase: 'Review', model: TIER.verify, effort: EFFORT.verify, schema: VERDICT_SCHEMA }
             )
           })
         )
@@ -435,7 +437,7 @@ const reviewUntilDry = async () => {
         tiebreakers++
         const tb = await agent(
           `Two reviewers disagree on whether this issue is real. You are the deciding opus vote. Judge strictly.\n\nISSUE:\n${JSON.stringify(it)}\n\nARTIFACT unit "${it.unitId}":\n${artifacts[it.unitId] ?? '(not found)'}`,
-          { label: `tiebreak:${it.title.slice(0, 14)}`, phase: 'Review', model: TIER.tiebreak, schema: VERDICT_SCHEMA }
+          { label: `tiebreak:${it.title.slice(0, 14)}`, phase: 'Review', model: TIER.tiebreak, effort: EFFORT.tiebreak, schema: VERDICT_SCHEMA }
         )
         isReal = !!(tb && tb.isReal)
       } else {
@@ -460,7 +462,7 @@ const reviewUntilDry = async () => {
       const fixed = await agent(
         `Task:\n${A.task}\n\nFix the confirmed issues in this unit, preserving what works. Return the full corrected artifact CONTENT in \`output\`; do NOT write files.\n\n` +
           `UNIT "${unitId}" CURRENT:\n${artifacts[unitId]}\n\nCONFIRMED ISSUES:\n${JSON.stringify(issues, null, 2)}`,
-        { label: `repair:${unitId}#${improvementRounds}`, phase: 'Review', model: TIER.repair, schema: BUILD_SCHEMA }
+        { label: `repair:${unitId}#${improvementRounds}`, phase: 'Review', model: TIER.repair, effort: EFFORT.repair, schema: BUILD_SCHEMA }
       )
       if (fixed && fixed.output) artifacts = { ...artifacts, [unitId]: fixed.output }
     }
@@ -477,7 +479,7 @@ while (true) {
   const critic = await agent(
     `Task:\n${A.task}\n\nCURRENT DELIVERABLE (unitId -> output):\n${JSON.stringify(artifacts, null, 2)}\n\n` +
       `You are a completeness critic. Does this FULLY satisfy the task? If not, return complete=false and list the missing pieces as concrete new work units (id + instruction). Be exacting — only call it complete when it truly is.`,
-    { label: `completeness#${improvementRounds}`, phase: 'Review', model: TIER.critic, schema: CRITIC_SCHEMA }
+    { label: `completeness#${improvementRounds}`, phase: 'Review', model: TIER.critic, effort: EFFORT.critic, schema: CRITIC_SCHEMA }
   )
   // agent() can resolve to null without throwing — stop the loop instead of dereferencing critic.complete
   if (!critic || critic.complete || !(critic.gaps && critic.gaps.length)) break
@@ -505,7 +507,7 @@ try {
       `CHOSEN APPROACH: ${winner.approach}\n\nBUILT & REPAIRED ARTIFACTS (unitId -> output):\n${JSON.stringify(artifacts, null, 2)}\n\n` +
       `REVIEW HISTORY: ${JSON.stringify(reviewLog)}\n\n` +
       `Assemble the final deliverable for the task. Be a completeness critic: in \`completeness\`/\`coverageNote\`, list ONLY the gaps and any budget-forced cuts — do NOT re-describe what the artifacts contain (they are returned verbatim alongside this synthesis).`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open
 } catch (e) {

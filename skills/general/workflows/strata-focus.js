@@ -58,6 +58,9 @@ const AGENT_ROOF = 40
 
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 const TIER = { find: 'haiku', verify: 'sonnet', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { find: 'low', verify: 'medium', synth: 'high' }
 if (A.tierHint === 'cheap') TIER.verify = 'haiku'
 if (A.tierHint === 'hard') TIER.verify = 'opus' // spend opus on the adversarial verify when correctness is critical
 
@@ -181,7 +184,7 @@ const found = await pipeline(DIMS, (dim) => {
   spawned++
   return agent(
     `Task: ${A.task}\n${GROUND_BLOCK}\nInvestigate STRICTLY the dimension: "${dim}". Read the real files/sources and quote evidence as path:line (or a source reference).${CONV_SELF_READ} Report only concrete, evidence-backed findings for this dimension.`,
-    { label: `find:${dim}`, phase: 'Find', model: TIER.find, schema: FINDINGS_SCHEMA }
+    { label: `find:${dim}`, phase: 'Find', model: TIER.find, effort: EFFORT.find, schema: FINDINGS_SCHEMA }
   )
 })
 
@@ -208,7 +211,7 @@ for (const it of items) {
     thunks.push(() =>
       agent(
         `Adversarially verify this finding. Re-read the cited evidence and judge whether it is REAL (not a false positive). Be skeptical; default to isReal=false if the evidence does not clearly support it.\n${GROUND_BLOCK}\n${JSON.stringify(it)}`,
-        { label: `verify:${it.title}`, phase: 'Verify', model: TIER.verify, schema: VERDICT_SCHEMA }
+        { label: `verify:${it.title}`, phase: 'Verify', model: TIER.verify, effort: EFFORT.verify, schema: VERDICT_SCHEMA }
       )
     )
   }
@@ -231,7 +234,7 @@ let synthesis
 try {
   synthesis = await agent(
     `Task: ${A.task}\n${GROUND_BLOCK}\nConfirmed findings (after adversarial verification):\n${JSON.stringify(confirmed, null, 2)}\n\nProduce the final, correct answer/roadmap. You MAY read 2-3 key files to ground the synthesis. Explicitly note any coverage gaps caused by the agent budget.`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   // agent() can resolve to null without throwing — route that into the fail-open below
   // (consistent with review/panel/sweep/ultra which all guard against synthesis null)

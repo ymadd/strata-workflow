@@ -48,10 +48,10 @@ const ORCH_REVIEW_MAX = 1 // ... and exactly one closing integration review
 // review), capped by the literal ORCH_* constants above; it never executes a unit and never enters
 // the escalation ladder — that ladder tops out at opus. Both verifiers (verify-invariants.js +
 // check-invariants.sh) fail the build if the apex literal appears outside ORCH lines.
-// ⏳ KILL SWITCH (2026-06-13): the US government halted Fable 5. While true, the orchestrator tier is
-// forced to opus regardless of args — no dead fable call + fallback churn. Flip to false to restore the
-// orchestrator when the halt lifts (single point of restoration; see delegation-spec.md §0b).
-const FABLE_HALTED = true
+// KILL SWITCH: set true to force the orchestrator tier to opus regardless of args (e.g. if fable becomes
+// unavailable again — it was halted 2026-06-13 and restored 2026-10-01 with Fable 5.1). Single point of
+// control; see delegation-spec.md §0b.
+const FABLE_HALTED = false
 const ORCH_DEFAULT = 'fable' // the only line outside ORCH_MODEL where the apex tier may be named
 const ORCH_MODEL = FABLE_HALTED ? 'opus' : A.dataSensitive === true ? 'opus' : A.orch === 'opus' ? 'opus' : ORCH_DEFAULT
 // dataSensitive: Mythos-class retention (30-day + human-access logging) differs from standard
@@ -114,14 +114,14 @@ log(
 // falls back to opus once if the apex tier errors out (cost-window removal, classifier fallback,
 // unavailability — the run must degrade, not die). ----
 const orchAgent = async (prompt, opts) => {
-  const first = await agent(prompt, { ...opts, model: ORCH_MODEL })
+  const first = await agent(prompt, { ...opts, model: ORCH_MODEL, effort: 'high' })
   if (first !== null) return first
   if (ORCH_MODEL === 'opus') return null
   if (!canSpawn()) return null
   spawned++
   const optLabel = (opts && opts.label) || 'orch'
   log(`orchestrator tier unavailable for "${optLabel}" — falling back to opus`)
-  return agent(prompt, { ...opts, label: `${optLabel}:fallback-opus`, model: 'opus' })
+  return agent(prompt, { ...opts, label: `${optLabel}:fallback-opus`, model: 'opus', effort: 'high' })
 }
 
 // ---- schemas: schema-bounded output IS the output discipline (no narration to suppress) ----
@@ -237,7 +237,7 @@ if (!Array.isArray(A.units) || !A.units.length) {
       spawned++
       return agent(
         `Reconnaissance ONLY — read, never modify. Map the smallest part of this codebase that matters for the task below: the relevant files/modules, how they connect, and anything a planner must know to split the work into independent units.\n\nTask: ${A.task}\n\nReturn terse findings + the file list. No prose beyond the schema.`,
-        { label: 'scout:map', phase: 'Scout', model: SCOUT_MODEL, schema: SCOUT_SCHEMA }
+        { label: 'scout:map', phase: 'Scout', model: SCOUT_MODEL, effort: 'low', schema: SCOUT_SCHEMA }
       )
     },
     () => {
@@ -245,7 +245,7 @@ if (!Array.isArray(A.units) || !A.units.length) {
       spawned++
       return agent(
         `Reconnaissance ONLY — read, never modify. Identify the VERIFICATION surface for the task below: how to run the relevant tests/lint/build, which existing tests cover the touched area, and what regressions to watch.\n\nTask: ${A.task}\nDoD: ${DOD}\n\nReturn terse findings + exact commands. No prose beyond the schema.`,
-        { label: 'scout:harness', phase: 'Scout', model: SCOUT_MODEL, schema: SCOUT_SCHEMA }
+        { label: 'scout:harness', phase: 'Scout', model: SCOUT_MODEL, effort: 'low', schema: SCOUT_SCHEMA }
       )
     },
   ])
@@ -421,7 +421,7 @@ const buildOnce = async (u, model, extra, label, effort) => {
   spawned++
   return agent(
     `You are the EXECUTOR for one unit of a larger conducted task. Implement it directly in the real files.\n\nUnit: ${u.title}\nSpec: ${u.spec}\nOwn (the ONLY files you may modify): ${u.own.length ? u.own.join(', ') : '(unrestricted — single-unit run)'}\nRead first (smallest sufficient set): ${u.refs.length ? u.refs.join(', ') : '(discover the minimal set yourself)'}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\n${HARNESS_BRIEF}\n${extra ? `\n${extra}\n` : ''}\n${SILENT_RULES}`,
-    { label, phase: 'Execute', model, schema: BUILD_SCHEMA, ...(effort ? { effort } : {}) }
+    { label, phase: 'Execute', model, schema: BUILD_SCHEMA, effort: effort || 'medium' }
   )
 }
 const verifyOnce = async (u, build, label) => {
@@ -429,7 +429,7 @@ const verifyOnce = async (u, build, label) => {
   spawned++
   return agent(
     `Adversarially verify this unit against its acceptance criteria and DoD. Re-read the changed files; run the relevant tests yourself if runnable. Be skeptical — default to pass=false unless the evidence clearly supports it.\n\nUnit: ${u.title}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nBuilder report: ${JSON.stringify(build)}`,
-    { label, phase: 'Execute', model: u.check ? u.check.model : VERIFY_MODEL, schema: VERIFY_SCHEMA, ...(u.check ? { effort: u.check.effort } : {}) }
+    { label, phase: 'Execute', model: u.check ? u.check.model : VERIFY_MODEL, schema: VERIFY_SCHEMA, effort: u.check ? u.check.effort : 'medium' }
   )
 }
 
@@ -476,7 +476,7 @@ const runUnit = async (u) => {
     escalation = 'diagnose'
     advice = await agent(
       `You are the escalation ADVISOR (diagnosis ONLY — do not edit files, do not write the fix).\nA cheaper executor failed this unit ${BASE_ATTEMPTS} times.\n\nUnit: ${u.title}\nSpec: ${u.spec}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nLast builder report: ${JSON.stringify(lastBuild)}\nLast verification: ${JSON.stringify(lastVerify)}\n\nRead the relevant files, then return: the root cause, whether a design change is needed, a fix plan of AT MOST 10 concrete steps, and what must NOT be repeated. Terse — this is an output-light role.`,
-      { label: `diagnose:${u.id}`, phase: 'Execute', model: DIAG_MODEL, schema: ADVICE_SCHEMA }
+      { label: `diagnose:${u.id}`, phase: 'Execute', model: DIAG_MODEL, effort: 'high', schema: ADVICE_SCHEMA }
     )
     if (advice) {
       const guided = `Escalation diagnosis from the advisor — follow this plan:\nRoot cause: ${advice.rootCause}\nPlan: ${(advice.plan || []).join(' / ')}\nDo NOT repeat: ${(advice.mustNotRepeat || []).join(' / ')}`
@@ -501,7 +501,7 @@ const runUnit = async (u) => {
     escalation = 'rebuild'
     const rebuild = await agent(
       `You are the ESCALATION EXECUTOR. Cheaper attempts failed; you get a CLEAN SLATE — the original spec and the diagnosis, NOT the failed patch history.\nFirst inspect \`git status\` and \`git diff\` for the files this unit owns; revert any uncommitted changes from prior attempts that you do not endorse (\`git restore <path>\` — ONLY within this unit's own files). Then implement from your own plan.\n\nUnit: ${u.title}\nSpec: ${u.spec}\nOwn (the ONLY files you may modify): ${u.own.length ? u.own.join(', ') : '(unrestricted — single-unit run)'}\nAcceptance: ${u.acceptance}\nDoD: ${DOD}\nAdvisor diagnosis: ${advice ? JSON.stringify(advice) : '(none — advisor stage was unavailable)'}\n\n${SILENT_RULES}`,
-      { label: `rebuild:${u.id}`, phase: 'Execute', model: REBUILD_MODEL, schema: BUILD_SCHEMA }
+      { label: `rebuild:${u.id}`, phase: 'Execute', model: REBUILD_MODEL, effort: 'high', schema: BUILD_SCHEMA }
     )
     if (rebuild) {
       const rebuildVerify = await verifyOnce(u, rebuild, `verify:${u.id}#rebuild`)

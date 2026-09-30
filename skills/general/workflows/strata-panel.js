@@ -40,6 +40,9 @@ const AGENT_ROOF = 40
 // ---- model tiers: applied to EVERY agent() call; implicit inherit is forbidden ----
 // diverge = sonnet (DRAFT/WRITE). advise/judge/synth = opus (the value of a tournament IS the judgment).
 const TIER = { advise: 'opus', diverge: 'sonnet', judge: 'opus', synth: 'opus' }
+// Reasoning effort per role, pinned so agents never inherit the main loop's (often high/xhigh) effort:
+// low = mechanical scan/map, medium = bounded build/review/verify, high = judgment (judge/synth/critic).
+const EFFORT = { advise: 'high', diverge: 'medium', judge: 'high', synth: 'high' }
 if (A.tierHint === 'cheap') TIER.advise = 'sonnet' // judge/synth stay opus — never cheap the judgment
 
 // ---- budget reads are BEST-EFFORT (never let the API throw) ----
@@ -206,7 +209,7 @@ if (ADVISE && canSpawn()) {
         `PROBLEM:\n${PROBLEM}\n` +
         (CONSTRAINTS ? `\nHARD CONSTRAINTS:\n${CONSTRAINTS}\n` : '') +
         `\nWrite a tight brief (<300 words) that lifts every designer toward expert level: the real quality bar, the non-obvious pitfalls, the criteria that separate a great answer from a mediocre one (the panel will judge on: ${AXES.join('; ')}), and any domain best-practices they must respect. Do NOT propose a solution yourself — only the bar.`,
-      { label: 'advise', phase: 'Advise', model: TIER.advise, schema: BRIEF_SCHEMA }
+      { label: 'advise', phase: 'Advise', model: TIER.advise, effort: EFFORT.advise, schema: BRIEF_SCHEMA }
     )
     brief = adv && adv.brief ? adv.brief : ''
   } catch (e) {
@@ -233,7 +236,7 @@ for (let i = 0; i < N; i++) {
         (CONSTRAINTS ? `\nHARD CONSTRAINTS:\n${CONSTRAINTS}\n` : '') +
         `\nPROBLEM:\n${PROBLEM}\n\n` +
         `Produce a concrete, self-contained proposal — specific enough to be judged and built, not a vague direction. Make your distinctive, transplantable ideas explicit in keyIdeas.`,
-      { label: `diverge:#${i} ${lens.slice(0, 24)}`, phase: 'Diverge', model: TIER.diverge, schema: DIVERGE_SCHEMA }
+      { label: `diverge:#${i} ${lens.slice(0, 24)}`, phase: 'Diverge', model: TIER.diverge, effort: EFFORT.diverge, schema: DIVERGE_SCHEMA }
     )
   )
 }
@@ -270,7 +273,7 @@ try {
         2
       )}\n\n` +
       `Be discriminating — do not award everyone similar scores. In your rationale, name the runner-up ideas that the winner should absorb.`,
-    { label: 'judge', phase: 'Judge', model: TIER.judge, schema: JUDGE_SCHEMA }
+    { label: 'judge', phase: 'Judge', model: TIER.judge, effort: EFFORT.judge, schema: JUDGE_SCHEMA }
   )
   if (!verdict) throw new Error('judge agent returned null') // route a non-throwing null into the fail-open below
 } catch (e) {
@@ -303,7 +306,7 @@ try {
         2
       )}\n\n` +
       `Do not blandly merge everything — keep the winner's coherence and only graft ideas that strengthen it. Record what you grafted and from where.`,
-    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, schema: SYNTH_SCHEMA }
+    { label: 'synthesize', phase: 'Synthesize', model: TIER.synth, effort: EFFORT.synth, schema: SYNTH_SCHEMA }
   )
   if (!synthesis) throw new Error('synthesis agent returned null') // route a non-throwing null into the fail-open below
 } catch (e) {
